@@ -133,10 +133,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
   const { connected, send } = useQuizSocket(handleServerMsg);
 
-  // Auto-check room if opened via QR link ?join=XXXX
+  // Auto-check room immediately if opened via QR link ?join=XXXX
   useEffect(() => {
     if (
-      connected &&
       !autoCheckedRef.current &&
       /^\d{4}$/.test(initialRoomCode.trim())
     ) {
@@ -144,7 +143,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setCheckingRoom(true);
       send({ type: 'player:check_room', code: initialRoomCode.trim() });
     }
-  }, [connected, initialRoomCode, send]);
+  }, [initialRoomCode, send]);
 
   // Rejoin automatically if socket reconnects while already in a room
   useEffect(() => {
@@ -303,7 +302,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               <button
                 type="submit"
                 data-testid="player-check-room-btn"
-                disabled={!connected || checkingRoom}
+                disabled={checkingRoom}
                 className="w-full min-h-[48px] rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-base inline-flex items-center justify-center gap-2 transition-colors"
               >
                 <LogIn className="w-5 h-5" />

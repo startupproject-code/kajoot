@@ -83,6 +83,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [muted, setMuted] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
+  const [launchingRoom, setLaunchingRoom] = useState(false);
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const lastSoundSecRef = useRef<number | null>(null);
@@ -90,12 +91,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const handleServerMsg = (msg: ServerMessage) => {
     if (msg.type === 'error') {
+      setLaunchingRoom(false);
       setWsError(msg.message);
       return;
     }
     setWsError(null);
 
     if (msg.type === 'host:created') {
+      setLaunchingRoom(false);
       setHostToken(msg.hostToken);
       setRoomState(msg.state);
       return;
@@ -310,6 +313,8 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       return;
     }
     setCsvNotice(null);
+    setWsError(null);
+    setLaunchingRoom(true);
     send({ type: 'host:create', quiz });
   };
 
@@ -774,16 +779,24 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             type="button"
             data-testid="host-launch-room"
             onClick={handleLaunchRoom}
-            disabled={!connected}
-            className="min-h-[42px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-bold inline-flex items-center gap-2 shadow-sm whitespace-nowrap"
+            disabled={launchingRoom}
+            className="min-h-[42px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold inline-flex items-center gap-2 shadow-sm whitespace-nowrap"
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>เปิดห้องแข่งขัน</span>
+            <span>{launchingRoom ? 'กำลังเปิดห้อง...' : 'เปิดห้องแข่งขัน'}</span>
           </button>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
+        {wsError && (
+          <div
+            role="alert"
+            className="rounded-xl px-4 py-3 text-sm font-medium border bg-red-50 border-red-200 text-red-800"
+          >
+            {wsError}
+          </div>
+        )}
         {csvNotice && (
           <div
             role="status"
