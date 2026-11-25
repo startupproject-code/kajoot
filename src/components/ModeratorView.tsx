@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   BarChart3,
@@ -159,6 +160,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [csvNotice, setCsvNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState<'image' | 'video' | 'cover' | null>(null);
   const [savingQuiz, setSavingQuiz] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<
+    | { kind: 'quiz'; quizId: string; title: string; questionCount: number }
+    | { kind: 'question'; index: number; text: string }
+    | null
+  >(null);
 
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
   const [activeLiveQuiz, setActiveLiveQuiz] = useState<QuizSet | null>(null);
@@ -443,6 +449,24 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     if (user) {
       void deleteQuizForUser(user.uid, quizId).catch(() => undefined);
     }
+  };
+
+  const handleConfirmDelete = () => {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === 'quiz') {
+      handleDeleteQuizSet(pendingDelete.quizId);
+      setCsvNotice({
+        type: 'ok',
+        text: `ลบชุดคำถาม "${pendingDelete.title}" ถาวรเรียบร้อยแล้ว`,
+      });
+    } else {
+      deleteQuestion(pendingDelete.index);
+      setCsvNotice({
+        type: 'ok',
+        text: `ลบคำถามข้อที่ ${pendingDelete.index + 1} เรียบร้อยแล้ว`,
+      });
+    }
+    setPendingDelete(null);
   };
 
   const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1120,6 +1144,80 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     />
   );
 
+  // Irreversible delete confirmation modal shared between Library and Editor
+  const deleteConfirmModal = pendingDelete ? (
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={() => setPendingDelete(null)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-confirm-title"
+        data-testid="delete-confirm-dialog"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-2xl p-6 space-y-5"
+      >
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <h2
+              id="delete-confirm-title"
+              className="text-lg font-extrabold text-slate-900"
+            >
+              {pendingDelete.kind === 'quiz'
+                ? 'ยืนยันการลบชุดคำถาม?'
+                : `ยืนยันการลบคำถามข้อที่ ${pendingDelete.index + 1}?`}
+            </h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              คุณต้องการลบข้อมูลนี้จริงหรือไม่?{' '}
+              <span className="font-bold text-rose-600">
+                หากลบแล้วจะไม่สามารถนำข้อมูลกลับมาได้อีก
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm">
+          {pendingDelete.kind === 'quiz' ? (
+            <div className="space-y-0.5">
+              <div className="font-bold text-slate-900 truncate">{pendingDelete.title}</div>
+              <div className="text-xs text-slate-500">
+                จำนวน {pendingDelete.questionCount} ข้อ
+              </div>
+            </div>
+          ) : (
+            <div className="font-medium text-slate-800 line-clamp-2">
+              {pendingDelete.text}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-1">
+          <button
+            type="button"
+            data-testid="cancel-delete-btn"
+            onClick={() => setPendingDelete(null)}
+            className="min-h-[42px] px-5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            data-testid="confirm-delete-btn"
+            onClick={handleConfirmDelete}
+            className="min-h-[42px] px-5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold inline-flex items-center gap-2 shadow-sm transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>ยืนยันลบข้อมูล</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   // =========================================================================
   // MODERATOR LEVEL 1: QUIZ COVER GALLERY (หน้าปกชุดคำถามแต่ละชุด)
   // =========================================================================
@@ -1127,6 +1225,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
         {csvFileInput}
+        {deleteConfirmModal}
 
         {/* Header with buttons firmly aligned to the top-right */}
         <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1326,7 +1425,15 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                       {quizSets.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteQuizSet(item.id)}
+                          data-testid={`delete-quiz-btn-${item.id}`}
+                          onClick={() =>
+                            setPendingDelete({
+                              kind: 'quiz',
+                              quizId: item.id,
+                              title: item.title,
+                              questionCount: item.questions.length,
+                            })
+                          }
                           aria-label={`ลบชุดคำถาม ${item.title}`}
                           className="min-h-[40px] min-w-[40px] rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition-colors"
                         >
@@ -1369,6 +1476,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {csvFileInput}
+      {deleteConfirmModal}
 
       {/* Top Header with buttons firmly aligned to the top-right */}
       <header className="border-b border-slate-200 bg-white px-4 sm:px-6 py-3.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1617,7 +1725,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     {quiz.questions.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => deleteQuestion(idx)}
+                        data-testid={`delete-question-btn-${idx}`}
+                        onClick={() =>
+                          setPendingDelete({
+                            kind: 'question',
+                            index: idx,
+                            text: item.text.trim() || `คำถามข้อที่ ${idx + 1}`,
+                          })
+                        }
                         aria-label={`ลบคำถามข้อที่ ${idx + 1}`}
                         className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                       >
