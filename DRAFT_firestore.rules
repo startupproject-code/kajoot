@@ -94,7 +94,7 @@ service cloud.firestore {
         && q.options[2] is string && q.options[2].size() >= 1 && q.options[2].size() <= 200
         && q.options[3] is string && q.options[3].size() >= 1 && q.options[3].size() <= 200
         && q.timeLimitSec is number && q.timeLimitSec >= 5 && q.timeLimitSec <= 180
-        && (!('imageUrl' in q) || (q.imageUrl is string && q.imageUrl.size() <= 2048))
+        && (!('imageUrl' in q) || (q.imageUrl is string && q.imageUrl.size() <= 700000))
         && (!('videoUrl' in q) || (q.videoUrl is string && q.videoUrl.size() <= 2048))
         && (phase != 'QUESTION' ? (!('correctIndex' in q) || (q.correctIndex is int && q.correctIndex >= 0 && q.correctIndex <= 3)) : !('correctIndex' in q));
     }

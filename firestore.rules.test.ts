@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  buildPublicQuestionPayload,
   sanitizePlayerName,
+  sanitizeQuizForFirebase,
   validateRoomAnswerPayload,
   validateRoomPlayerPayload,
   validateRoomPayload,
@@ -218,5 +220,29 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
       { authUid: 'p1', roomCode: '4829', roomPhase: 'ENDED', currentQuestionIndex: 0 }
     );
     assert.equal(res.ok, false);
+  });
+
+  it('preserves compressed Base64 images up to 500KB for Firestore without truncation', () => {
+    const sampleDataUrl = `data:image/jpeg;base64,${'A'.repeat(450_000)}`;
+    const sanitized = sanitizeQuizForFirebase({
+      id: 'quiz_1',
+      title: 'Test Quiz',
+      description: '',
+      questions: [
+        {
+          id: 'q_1',
+          text: 'Question 1',
+          options: ['A', 'B', 'C', 'D'],
+          correctIndex: 0,
+          timeLimitSec: 20,
+          imageUrl: sampleDataUrl,
+        },
+      ],
+    });
+    assert.equal(sanitized.questions[0].imageUrl?.length, sampleDataUrl.length);
+
+    const publicQ = buildPublicQuestionPayload(sanitized.questions[0], 'QUESTION');
+    assert.equal(publicQ.imageUrl?.length, sampleDataUrl.length);
+    assert.match(rulesText, /q\.imageUrl\.size\(\) <= 700000/);
   });
 });

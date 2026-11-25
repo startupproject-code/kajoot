@@ -10,6 +10,7 @@ export const MAX_QUESTIONS_PER_QUIZ = 100;
 export const MAX_QUESTION_TEXT_LEN = 500;
 export const MAX_OPTION_TEXT_LEN = 200;
 export const MAX_MEDIA_URL_LEN = 2048;
+export const MAX_IMAGE_DATA_URL_LEN = 700_000;
 export const MAX_PLAYER_NAME_LEN = 24;
 export const MAX_ANSWER_ID_LEN = 140;
 
@@ -26,7 +27,8 @@ export function sanitizeQuizForFirebase(quiz: QuizSet): QuizSet {
     .slice(0, MAX_QUESTIONS_PER_QUIZ)
     .map((q, idx) => {
       const cleanId = isValidFirebaseId(q.id) ? q.id : `q_${idx + 1}`;
-      const imageUrl = q.imageUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
+      const rawImg = q.imageUrl?.trim();
+      const imageUrl = rawImg && rawImg.length <= MAX_IMAGE_DATA_URL_LEN ? rawImg : rawImg?.slice(0, MAX_IMAGE_DATA_URL_LEN);
       const videoUrl = q.videoUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
 
       return {
@@ -57,7 +59,8 @@ export function buildPublicQuestionPayload(
   q: QuizSet['questions'][number],
   phase: RoomPhase
 ): PublicQuestionView {
-  const imageUrl = q.imageUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
+  const rawImg = q.imageUrl?.trim();
+  const imageUrl = rawImg && rawImg.length <= MAX_IMAGE_DATA_URL_LEN ? rawImg : rawImg?.slice(0, MAX_IMAGE_DATA_URL_LEN);
   const videoUrl = q.videoUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
 
   return {

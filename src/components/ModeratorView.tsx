@@ -55,6 +55,13 @@ import {
   QuizQuestion,
   QuizSet,
 } from '../shared/types';
+import {
+  compressImageFileToDataUrl,
+  estimateQuizPayloadBytes,
+  MAX_FIRESTORE_QUIZ_BYTES,
+  MAX_INLINE_VIDEO_BYTES,
+  readFileAsDataUrl,
+} from '../utils/mediaUpload';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { CountdownClock } from './CountdownClock';
@@ -489,31 +496,36 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   ) => {
     if (!file) return;
     setUploadingMedia(kind);
+    setCsvNotice(null);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
-        reader.readAsDataURL(file);
-      });
-
-      const resp = await fetch('/api/media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl }),
-      });
-      const data = (await resp.json()) as { url?: string; error?: string };
-      if (!resp.ok || !data.url) {
-        setCsvNotice({ type: 'err', text: data.error || 'อัปโหลดไฟล์สื่อไม่สำเร็จ' });
-        return;
-      }
       if (kind === 'image') {
-        updateQuestion({ imageUrl: data.url });
+        const compressed = await compressImageFileToDataUrl(file);
+        updateQuestion({ imageUrl: compressed.dataUrl });
+        const sizeKb = Math.max(1, Math.round(compressed.approxBytes / 1024));
+        setCsvNotice({
+          type: 'ok',
+          text: `อัปโหลดรูปภาพเรียบร้อยแล้ว (ย่อขนาดเหลือ ${sizeKb} KB พร้อมแสดงผลและบันทึกลง Firestore)`,
+        });
+      } else if (file.size <= MAX_INLINE_VIDEO_BYTES) {
+        const videoDataUrl = await readFileAsDataUrl(file);
+        updateQuestion({ videoUrl: videoDataUrl });
+        setCsvNotice({
+          type: 'ok',
+          text: 'อัปโหลดวิดีโอขนาดเล็กเรียบร้อยแล้ว',
+        });
       } else {
-        updateQuestion({ videoUrl: data.url });
+        const localObjectUrl = URL.createObjectURL(file);
+        updateQuestion({ videoUrl: localObjectUrl });
+        setCsvNotice({
+          type: 'ok',
+          text: 'โหลดวิดีโอในเครื่องชั่วคราวแล้ว (หากต้องการให้ผู้เล่นทุกเครื่องเห็นวิดีโอด้วย แนะนำวางลิงก์ YouTube หรือ MP4 URL)',
+        });
       }
-    } catch {
-      setCsvNotice({ type: 'err', text: 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์สื่อ' });
+    } catch (err) {
+      setCsvNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการประมวลผลไฟล์สื่อ',
+      });
     } finally {
       setUploadingMedia(null);
     }
@@ -521,6 +533,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const handleSaveQuiz = async () => {
     clearAuthError();
+    if (estimateQuizPayloadBytes(quiz) > MAX_FIRESTORE_QUIZ_BYTES) {
+      setCsvNotice({
+        type: 'err',
+        text: 'ขนาดรูปภาพรวมในชุดคำถามนี้เกินขีดจำกัด 1 MB ของ Firestore กรุณาลดจำนวนรูปภาพหรือใช้ลิงก์ URL แทนบางข้อ',
+      });
+      return;
+    }
+
     let authedUser = user;
     if (!authedUser) {
       authedUser = await signInWithGoogle();
@@ -559,6 +579,16 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       setCsvNotice({
         type: 'err',
         text: `กรุณากรอกคำถามและตัวเลือกทั้ง 4 ข้อให้ครบในข้อที่ ${invalidIdx + 1}`,
+      });
+      return;
+    }
+
+    if (estimateQuizPayloadBytes(quizToLaunch) > MAX_FIRESTORE_QUIZ_BYTES) {
+      setActiveQuizId(quizToLaunch.id);
+      setPanelMode('EDITOR');
+      setCsvNotice({
+        type: 'err',
+        text: 'ขนาดรูปภาพรวมในชุดคำถามนี้เกินขีดจำกัด 1 MB ของ Firestore กรุณาลดจำนวนรูปภาพหรือใช้ลิงก์ URL แทนบางข้อ',
       });
       return;
     }
@@ -1570,23 +1600,40 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label htmlFor="q-image-url" className="block text-xs font-bold text-slate-600">
-                    รูปภาพประกอบ (URL หรืออัปโหลดไฟล์)
+                    รูปภาพประกอบ (URL หรืออัปโหลดไฟล์ ย่ออัตโนมัติไม่เกิน 500KB)
                   </label>
                   <div className="flex gap-2">
-                    <input
-                      id="q-image-url"
-                      type="text"
-                      value={activeQuestion.imageUrl || ''}
-                      onChange={(e) => updateQuestion({ imageUrl: e.target.value })}
-                      placeholder="https://... หรืออัปโหลดรูป"
-                      className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
+                    {activeQuestion.imageUrl?.startsWith('data:image/') ? (
+                      <div className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs sm:text-sm font-medium flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          อัปโหลดรูป Base64 แล้ว (
+                          {Math.max(1, Math.round((activeQuestion.imageUrl.length * 0.75) / 1024))} KB)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => updateQuestion({ imageUrl: '' })}
+                          className="text-xs font-bold text-rose-600 hover:text-rose-700 whitespace-nowrap shrink-0"
+                        >
+                          ลบรูป
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        id="q-image-url"
+                        type="text"
+                        value={activeQuestion.imageUrl || ''}
+                        onChange={(e) => updateQuestion({ imageUrl: e.target.value })}
+                        placeholder="https://... หรืออัปโหลดรูป"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    )}
                     <label className="min-h-[38px] px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0">
                       <ImageIcon className="w-4 h-4" />
-                      <span>{uploadingMedia === 'image' ? 'กำลังอัปโหลด' : 'อัปโหลด'}</span>
+                      <span>{uploadingMedia === 'image' ? 'กำลังย่อรูป...' : 'อัปโหลด'}</span>
                       <input
                         type="file"
                         accept="image/*"
+                        data-testid="upload-image-input"
                         className="hidden"
                         onChange={(e) => {
                           void handleMediaFileUpload('image', e.target.files?.[0]);

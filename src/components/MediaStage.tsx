@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ImageOff, Video } from 'lucide-react';
 import { parseVideoEmbed } from '../shared/quizLogic';
 
@@ -14,6 +14,10 @@ export const MediaStage: React.FC<MediaStageProps> = ({
   compact = false,
 }) => {
   const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [imageUrl]);
   const video = parseVideoEmbed(videoUrl);
 
   const hasImage = Boolean(imageUrl && imageUrl.trim());
