@@ -1,7 +1,9 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -196,6 +198,73 @@ export async function saveDefaultQuizForUser(uid: string, quiz: QuizSet): Promis
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function loadAllSavedQuizzes(uid: string): Promise<QuizSet[]> {
+  const path = `users/${uid}/quizzes`;
+  try {
+    const q = query(collection(db, 'users', uid, 'quizzes'), where('ownerUid', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const data = d.data() as {
+          id: string;
+          title: string;
+          description?: string;
+          questions?: QuizSet['questions'];
+        };
+        return sanitizeQuizForFirebase({
+          id: data.id || d.id,
+          title: data.title || 'ชุดคำถามใหม่',
+          description: data.description || '',
+          questions: data.questions || [],
+        });
+      })
+      .filter((item) => item.questions.length > 0);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveQuizForUser(uid: string, quiz: QuizSet): Promise<QuizSet> {
+  const clean = sanitizeQuizForFirebase(quiz);
+  const quizId = clean.id;
+  const path = `users/${uid}/quizzes/${quizId}`;
+  const ref = doc(db, 'users', uid, 'quizzes', quizId);
+
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        id: quizId,
+        ownerUid: uid,
+        title: clean.title,
+        description: clean.description,
+        questions: clean.questions,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        title: clean.title,
+        description: clean.description,
+        questions: clean.questions,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return clean;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteQuizForUser(uid: string, quizId: string): Promise<void> {
+  const path = `users/${uid}/quizzes/${quizId}`;
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'quizzes', quizId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 

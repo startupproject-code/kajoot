@@ -4,13 +4,17 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  BookOpen,
   Check,
+  Clock,
   Copy,
   Download,
   FileSpreadsheet,
   Image as ImageIcon,
+  Layers,
   LogIn,
   LogOut,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -26,15 +30,16 @@ import {
 import { useFirebase } from '../firebase/FirebaseProvider';
 import {
   createFirebaseRoom,
+  deleteQuizForUser,
   FirestoreAnswerDoc,
   FirestorePlayerDoc,
   FirestoreRoomDoc,
   hostRevealCurrentQuestion,
   hostStartOrAdvanceQuestion,
   hostTransitionPhase,
-  loadSavedDefaultQuiz,
+  loadAllSavedQuizzes,
   roomDocToPublicState,
-  saveDefaultQuizForUser,
+  saveQuizForUser,
   subscribeHostRoom,
   syncHostRoomStats,
 } from '../firebase/firebaseQuizService';
@@ -61,13 +66,65 @@ interface ModeratorViewProps {
   onBackHome: () => void;
 }
 
+const LOCAL_QUIZZES_KEY = 'quizarena_moderator_quizzes_v1';
+
+const COVER_GRADIENTS = [
+  'from-indigo-600 via-violet-600 to-purple-700',
+  'from-emerald-600 via-teal-600 to-cyan-700',
+  'from-amber-500 via-orange-600 to-rose-600',
+  'from-sky-600 via-blue-600 to-indigo-700',
+  'from-fuchsia-600 via-pink-600 to-rose-700',
+];
+
+function cloneDefaultQuiz(): QuizSet {
+  return {
+    ...DEFAULT_QUIZ,
+    questions: DEFAULT_QUIZ.questions.map((q) => ({
+      ...q,
+      options: [...q.options] as [string, string, string, string],
+    })),
+  };
+}
+
+function loadLocalQuizzes(): QuizSet[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_QUIZZES_KEY);
+    if (!raw) return [cloneDefaultQuiz()];
+    const parsed = JSON.parse(raw) as QuizSet[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter((q) => q && Array.isArray(q.questions) && q.questions.length > 0);
+    }
+  } catch {
+    // ignore invalid local cache
+  }
+  return [cloneDefaultQuiz()];
+}
+
 function createBlankQuestion(index: number): QuizQuestion {
   return {
-    id: `q-${Date.now().toString(36)}-${index}`,
+    id: `q_${Date.now().toString(36)}_${index}`,
     text: '',
     options: ['', '', '', ''],
     correctIndex: 0,
     timeLimitSec: 20,
+  };
+}
+
+function createBlankQuizSet(count: number): QuizSet {
+  const uidPart = Date.now().toString(36);
+  return {
+    id: `quiz_${uidPart}`,
+    title: `ชุดคำถามใหม่ #${count + 1}`,
+    description: 'คำถามความรู้ทั่วไปสำหรับแข่งขันแบบเรียลไทม์',
+    questions: [
+      {
+        id: `q_${uidPart}_1`,
+        text: 'คำถามข้อที่ 1',
+        options: ['ตัวเลือก A', 'ตัวเลือก B', 'ตัวเลือก C', 'ตัวเลือก D'],
+        correctIndex: 0,
+        timeLimitSec: 20,
+      },
+    ],
   };
 }
 
@@ -87,20 +144,17 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const { user, authReady, signingIn, authError, signInWithGoogle, signOutUser, clearAuthError } =
     useFirebase();
 
-  const [quiz, setQuiz] = useState<QuizSet>(() => ({
-    ...DEFAULT_QUIZ,
-    questions: DEFAULT_QUIZ.questions.map((q) => ({
-      ...q,
-      options: [...q.options] as [string, string, string, string],
-    })),
-  }));
+  const [quizSets, setQuizSets] = useState<QuizSet[]>(() => loadLocalQuizzes());
+  const [activeQuizId, setActiveQuizId] = useState<string>(() => loadLocalQuizzes()[0]?.id || DEFAULT_QUIZ.id);
+  const [panelMode, setPanelMode] = useState<'LIBRARY' | 'EDITOR'>('LIBRARY');
+
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [csvNotice, setCsvNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState<'image' | 'video' | null>(null);
   const [savingQuiz, setSavingQuiz] = useState(false);
 
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
-  const [activeQuiz, setActiveQuiz] = useState<QuizSet | null>(null);
+  const [activeLiveQuiz, setActiveLiveQuiz] = useState<QuizSet | null>(null);
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [playersDocs, setPlayersDocs] = useState<FirestorePlayerDoc[]>([]);
   const [answersDocs, setAnswersDocs] = useState<FirestoreAnswerDoc[]>([]);
@@ -118,20 +172,38 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const loadedSavedForUidRef = useRef<string | null>(null);
   const revealingQuestionRef = useRef<number | null>(null);
 
-  // Load Moderator's saved quiz from Firestore once authenticated
+  const quiz = useMemo(
+    () => quizSets.find((q) => q.id === activeQuizId) ?? quizSets[0] ?? cloneDefaultQuiz(),
+    [quizSets, activeQuizId]
+  );
+
+  // Save quiz sets to localStorage on change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LOCAL_QUIZZES_KEY, JSON.stringify(quizSets));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [quizSets]);
+
+  // Load Moderator's saved quizzes from Firestore once authenticated
   useEffect(() => {
     if (!authReady || !user) return;
     if (loadedSavedForUidRef.current === user.uid) return;
     loadedSavedForUidRef.current = user.uid;
 
-    void loadSavedDefaultQuiz(user.uid)
-      .then((saved) => {
-        if (saved && saved.questions.length > 0) {
-          setQuiz(saved);
-        }
+    void loadAllSavedQuizzes(user.uid)
+      .then((savedList) => {
+        if (savedList.length === 0) return;
+        setQuizSets((prev) => {
+          const merged = new Map<string, QuizSet>();
+          for (const q of prev) merged.set(q.id, q);
+          for (const q of savedList) merged.set(q.id, q);
+          return Array.from(merged.values());
+        });
       })
       .catch((err) => {
-        console.error('Failed to load saved quiz:', err);
+        console.error('Failed to load saved quizzes:', err);
       });
   }, [authReady, user]);
 
@@ -156,7 +228,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     return () => window.clearInterval(timer);
   }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
 
-  // Derive current RoomPublicState for UI rendering
   const roomState = useMemo(() => {
     if (!roomDoc) return null;
     const base = roomDocToPublicState(roomDoc, nowMs);
@@ -189,7 +260,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     const playersChanged = playersDocs.length !== roomDoc.totalPlayers;
     const answeredChanged = qAnswers.length !== roomDoc.answeredCount;
 
-    // Also detect player profile edits in lobby
     const namesChanged =
       roomDoc.phase === 'LOBBY' &&
       playersDocs.some((p) => {
@@ -217,7 +287,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   // Auto-reveal when countdown reaches 0 OR all players answered
   useEffect(() => {
-    if (!activeRoomCode || !activeQuiz || !roomDoc || roomDoc.phase !== 'QUESTION') {
+    if (!activeRoomCode || !activeLiveQuiz || !roomDoc || roomDoc.phase !== 'QUESTION') {
       revealingQuestionRef.current = null;
       return;
     }
@@ -234,7 +304,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       revealingQuestionRef.current = qIdx;
       void hostRevealCurrentQuestion({
         code: activeRoomCode,
-        quiz: activeQuiz,
+        quiz: activeLiveQuiz,
         questionIndex: qIdx,
         questionEndsAt: roomDoc.questionEndsAt,
         players: playersDocs,
@@ -245,7 +315,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         console.error('Auto-reveal failed:', err);
       });
     }
-  }, [activeRoomCode, activeQuiz, roomDoc, playersDocs, answersDocs, nowMs]);
+  }, [activeRoomCode, activeLiveQuiz, roomDoc, playersDocs, answersDocs, nowMs]);
 
   // Generate QR code whenever room code changes
   useEffect(() => {
@@ -298,10 +368,16 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     soundFx.setMuted(next);
   };
 
+  const setActiveQuiz = (updater: (prev: QuizSet) => QuizSet) => {
+    setQuizSets((prevList) =>
+      prevList.map((item) => (item.id === quiz.id ? updater(item) : item))
+    );
+  };
+
   const activeQuestion = quiz.questions[selectedIdx] ?? quiz.questions[0];
 
   const updateQuestion = (patch: Partial<QuizQuestion>) => {
-    setQuiz((prev) => ({
+    setActiveQuiz((prev) => ({
       ...prev,
       questions: prev.questions.map((q, idx) =>
         idx === selectedIdx ? { ...q, ...patch } : q
@@ -318,7 +394,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const addQuestion = () => {
     const newQ = createBlankQuestion(quiz.questions.length + 1);
-    setQuiz((prev) => ({
+    setActiveQuiz((prev) => ({
       ...prev,
       questions: [...prev.questions, newQ],
     }));
@@ -327,11 +403,39 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const deleteQuestion = (idx: number) => {
     if (quiz.questions.length <= 1) return;
-    setQuiz((prev) => ({
+    setActiveQuiz((prev) => ({
       ...prev,
       questions: prev.questions.filter((_, i) => i !== idx),
     }));
     setSelectedIdx((prev) => Math.max(0, Math.min(prev, quiz.questions.length - 2)));
+  };
+
+  const handleCreateNewQuizSet = () => {
+    const created = createBlankQuizSet(quizSets.length);
+    setQuizSets((prev) => [...prev, created]);
+    setActiveQuizId(created.id);
+    setSelectedIdx(0);
+    setCsvNotice(null);
+    setPanelMode('EDITOR');
+  };
+
+  const handleOpenQuizEditor = (quizId: string) => {
+    setActiveQuizId(quizId);
+    setSelectedIdx(0);
+    setCsvNotice(null);
+    setPanelMode('EDITOR');
+  };
+
+  const handleDeleteQuizSet = (quizId: string) => {
+    if (quizSets.length <= 1) return;
+    const remaining = quizSets.filter((q) => q.id !== quizId);
+    setQuizSets(remaining);
+    if (activeQuizId === quizId && remaining[0]) {
+      setActiveQuizId(remaining[0].id);
+    }
+    if (user) {
+      void deleteQuizForUser(user.uid, quizId).catch(() => undefined);
+    }
   };
 
   const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -349,12 +453,27 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       return;
     }
 
-    setQuiz((prev) => ({
-      ...prev,
-      title: file.name.replace(/\.csv$/i, '') || prev.title,
-      questions: result.questions,
-    }));
-    setSelectedIdx(0);
+    const importedTitle = file.name.replace(/\.csv$/i, '') || 'ชุดคำถามนำเข้า CSV';
+    if (panelMode === 'LIBRARY') {
+      const newQuiz: QuizSet = {
+        id: `quiz_${Date.now().toString(36)}`,
+        title: importedTitle,
+        description: `นำเข้าจากไฟล์ ${file.name}`,
+        questions: result.questions,
+      };
+      setQuizSets((prev) => [...prev, newQuiz]);
+      setActiveQuizId(newQuiz.id);
+      setSelectedIdx(0);
+      setPanelMode('EDITOR');
+    } else {
+      setActiveQuiz((prev) => ({
+        ...prev,
+        title: importedTitle || prev.title,
+        questions: result.questions,
+      }));
+      setSelectedIdx(0);
+    }
+
     setCsvNotice({
       type: result.errors.length > 0 ? 'err' : 'ok',
       text:
@@ -410,7 +529,8 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
     setSavingQuiz(true);
     try {
-      await saveDefaultQuizForUser(authedUser.uid, quiz);
+      const saved = await saveQuizForUser(authedUser.uid, quiz);
+      setActiveQuiz(() => saved);
       setCsvNotice({
         type: 'ok',
         text: 'บันทึกชุดคำถามลงฐานข้อมูล Firebase เรียบร้อยแล้ว',
@@ -433,6 +553,8 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       (q) => !q.text.trim() || q.options.some((o) => !o.trim())
     );
     if (invalidIdx !== -1) {
+      setActiveQuizId(quizToLaunch.id);
+      setPanelMode('EDITOR');
       setSelectedIdx(invalidIdx);
       setCsvNotice({
         type: 'err',
@@ -456,12 +578,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       }
 
       const { code, quiz: cleanQuiz } = await createFirebaseRoom(authedUser.uid, quizToLaunch);
-      void saveDefaultQuizForUser(authedUser.uid, cleanQuiz).catch(() => undefined);
+      void saveQuizForUser(authedUser.uid, cleanQuiz).catch(() => undefined);
 
       setPlayersDocs([]);
       setAnswersDocs([]);
       setRoomDoc(null);
-      setActiveQuiz(cleanQuiz);
+      setActiveLiveQuiz(cleanQuiz);
       setActiveRoomCode(code);
     } catch (err) {
       setRoomError(
@@ -487,7 +609,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   // =========================================================================
   // LIVE HOST STAGE (LOBBY / QUESTION / REVEAL / LEADERBOARD / ENDED)
   // =========================================================================
-  if (activeRoomCode && roomState && activeQuiz) {
+  if (activeRoomCode && roomState && activeLiveQuiz) {
     const joinUrl = `${window.location.origin}/?join=${roomState.code}`;
     const q = roomState.currentQuestion;
     const totalVotes = roomState.answerCounts.reduce((acc, v) => acc + v, 0);
@@ -502,14 +624,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               onClick={() => {
                 setActiveRoomCode(null);
                 setRoomDoc(null);
-                setActiveQuiz(null);
+                setActiveLiveQuiz(null);
                 setPlayersDocs([]);
                 setAnswersDocs([]);
               }}
               className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>กลับตัวแก้ไข</span>
+              <span>กลับชุดคำถาม</span>
             </button>
             <div className="min-w-0">
               <h1 className="font-bold text-base sm:text-lg text-white truncate">
@@ -525,7 +647,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0 ml-auto">
             <button
               type="button"
               onClick={toggleMute}
@@ -593,7 +715,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                       soundFx.unlock();
                       void hostStartOrAdvanceQuestion({
                         code: activeRoomCode,
-                        quiz: activeQuiz,
+                        quiz: activeLiveQuiz,
                         questionIndex: 0,
                         players: playersDocs,
                       });
@@ -650,7 +772,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         {/* PHASE: QUESTION & REVEAL */}
         {(roomState.phase === 'QUESTION' || roomState.phase === 'REVEAL') && q && (
           <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-6 flex flex-col justify-between gap-6">
-            {/* Stage HUD */}
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="text-sm font-semibold text-indigo-300">
@@ -666,7 +787,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               </div>
             </div>
 
-            {/* Question Card + Media */}
             <div className="rounded-3xl bg-slate-800/80 border border-slate-700 p-6 sm:p-8 text-center space-y-4">
               <h2 className="text-2xl sm:text-4xl font-extrabold text-white leading-snug text-balance">
                 {q.text}
@@ -674,7 +794,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               <MediaStage imageUrl={q.imageUrl} videoUrl={q.videoUrl} />
             </div>
 
-            {/* Answer Distribution on Reveal */}
             {roomState.phase === 'REVEAL' && (
               <div className="rounded-2xl bg-slate-800/70 border border-slate-700 p-4 sm:p-5">
                 <div className="flex items-center gap-2 text-sm font-bold text-slate-200 mb-3">
@@ -711,7 +830,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               </div>
             )}
 
-            {/* 4 Options Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {([0, 1, 2, 3] as AnswerIndex[]).map((idx) => {
                 const style = ANSWER_STYLES[idx];
@@ -748,7 +866,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               })}
             </div>
 
-            {/* Host Flow Controls */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
               <button
                 type="button"
@@ -756,7 +873,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   if (roomState.phase === 'QUESTION') {
                     void hostRevealCurrentQuestion({
                       code: activeRoomCode,
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       questionIndex: roomState.currentQuestionIndex,
                       questionEndsAt: roomState.questionEndsAt,
                       players: playersDocs,
@@ -767,7 +884,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     void hostTransitionPhase({
                       code: activeRoomCode,
                       phase: 'ENDED',
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       currentQuestionIndex: roomState.currentQuestionIndex,
                       players: playersDocs,
                     });
@@ -786,7 +903,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     revealingQuestionRef.current = roomState.currentQuestionIndex;
                     void hostRevealCurrentQuestion({
                       code: activeRoomCode,
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       questionIndex: roomState.currentQuestionIndex,
                       questionEndsAt: roomState.questionEndsAt,
                       players: playersDocs,
@@ -811,7 +928,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     void hostTransitionPhase({
                       code: activeRoomCode,
                       phase: nextPhase,
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       currentQuestionIndex: roomState.currentQuestionIndex,
                       players: playersDocs,
                     });
@@ -850,7 +967,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     void hostTransitionPhase({
                       code: activeRoomCode,
                       phase: 'ENDED',
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       currentQuestionIndex: roomState.currentQuestionIndex,
                       players: playersDocs,
                     })
@@ -865,7 +982,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   onClick={() =>
                     void hostStartOrAdvanceQuestion({
                       code: activeRoomCode,
-                      quiz: activeQuiz,
+                      quiz: activeLiveQuiz,
                       questionIndex: roomState.currentQuestionIndex + 1,
                       players: playersDocs,
                     })
@@ -916,7 +1033,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleLaunchRoom(activeQuiz)}
+                  onClick={() => void handleLaunchRoom(activeLiveQuiz)}
                   className="min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center gap-2"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -937,46 +1054,306 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     );
   }
 
+  // Hidden shared CSV file input used in both Library and Editor headers
+  const csvFileInput = (
+    <input
+      ref={csvInputRef}
+      type="file"
+      accept=".csv,text/csv"
+      onChange={handleCsvImport}
+      className="hidden"
+      aria-label="อัปโหลดไฟล์คำถาม CSV"
+    />
+  );
+
   // =========================================================================
-  // MODERATOR QUIZ BUILDER & CSV MANAGER
+  // MODERATOR LEVEL 1: QUIZ COVER GALLERY (หน้าปกชุดคำถามแต่ละชุด)
+  // =========================================================================
+  if (panelMode === 'LIBRARY') {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+        {csvFileInput}
+
+        {/* Header with buttons firmly aligned to the top-right */}
+        <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <button
+              type="button"
+              onClick={onBackHome}
+              className="min-h-[38px] px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>หน้าแรก</span>
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-xl font-extrabold text-slate-900 truncate">
+                คลังชุดคำถามสำหรับ Moderator
+              </h1>
+              <p className="text-xs text-slate-500 truncate">
+                คลิกที่หน้าปกชุดคำถามเพื่อสร้าง แก้ไขคำถาม หรือเปิดห้องแข่งขัน (สูงสุด 200 คน/ห้อง)
+              </p>
+            </div>
+          </div>
+
+          <div className="w-full lg:w-auto lg:ml-auto flex flex-wrap lg:flex-nowrap items-center justify-end gap-2 lg:shrink-0">
+            {authReady && !user && (
+              <button
+                type="button"
+                onClick={() => void signInWithGoogle()}
+                disabled={signingIn}
+                className="min-h-[38px] px-3 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>{signingIn ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ Google'}</span>
+              </button>
+            )}
+            {user && (
+              <div className="min-h-[38px] flex items-center gap-2 px-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                <span className="truncate max-w-[120px]">
+                  {user.displayName || user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void signOutUser()}
+                  title="ออกจากระบบ"
+                  className="text-slate-500 hover:text-rose-600"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => downloadTextFile('quiz-template.csv', '\uFEFF' + SAMPLE_CSV_TEMPLATE)}
+              className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-slate-500" />
+              <span>ตัวอย่าง CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => csvInputRef.current?.click()}
+              className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Upload className="w-4 h-4 text-indigo-600" />
+              <span>นำเข้าไฟล์ CSV</span>
+            </button>
+            <button
+              type="button"
+              data-testid="create-new-quiz-btn"
+              onClick={handleCreateNewQuizSet}
+              className="min-h-[38px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>สร้างชุดคำถามใหม่</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-7 space-y-6">
+          {(roomError || authError) && (
+            <div
+              role="alert"
+              className="rounded-xl px-4 py-3 text-sm font-medium border bg-red-50 border-red-200 text-red-800"
+            >
+              {roomError || authError}
+            </div>
+          )}
+          {csvNotice && (
+            <div
+              role="status"
+              className={`rounded-xl px-4 py-3 text-sm font-medium border ${
+                csvNotice.type === 'ok'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
+              {csvNotice.text}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-extrabold text-slate-900">
+              ชุดคำถามของคุณ ({quizSets.length} ชุด)
+            </h2>
+            <span className="text-xs text-slate-500">
+              กดที่หน้าปกเพื่อเข้าไปสร้างหรือแก้ไขคำถามแต่ละข้อ
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {quizSets.map((item, idx) => {
+              const coverImg = item.questions.find((q) => Boolean(q.imageUrl?.trim()))?.imageUrl;
+              const gradient = COVER_GRADIENTS[idx % COVER_GRADIENTS.length];
+              const totalSec = item.questions.reduce((acc, q) => acc + (q.timeLimitSec || 20), 0);
+              const totalMin = Math.max(1, Math.ceil(totalSec / 60));
+
+              return (
+                <article
+                  key={item.id}
+                  data-testid={`quiz-cover-card-${item.id}`}
+                  className="group rounded-3xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md hover:border-indigo-300 transition-all flex flex-col"
+                >
+                  {/* Clickable Cover Image / Banner */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenQuizEditor(item.id)}
+                    className="relative w-full aspect-[16/9] text-left overflow-hidden focus:outline-none"
+                  >
+                    {coverImg ? (
+                      <>
+                        <img
+                          src={coverImg}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-transparent" />
+                      </>
+                    ) : (
+                      <div className={`w-full h-full bg-gradient-to-br ${gradient} p-5 flex flex-col justify-between relative`}>
+                        <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center">
+                          <BookOpen className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-white/10" />
+                        <div className="absolute right-8 top-4 w-12 h-12 rounded-2xl rotate-12 bg-white/10" />
+                      </div>
+                    )}
+
+                    {/* Cover Overlay Badges & Title */}
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-sm text-white text-xs font-bold inline-flex items-center gap-1">
+                        <Layers className="w-3.5 h-3.5 text-indigo-300" />
+                        <span>{item.questions.length} ข้อ</span>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-950/70 backdrop-blur-sm text-white text-xs font-semibold inline-flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-emerald-300" />
+                        <span>~{totalMin} นาที</span>
+                      </span>
+                    </div>
+
+                    <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+                      <h3 className="font-extrabold text-lg leading-snug line-clamp-2 drop-shadow-sm">
+                        {item.title}
+                      </h3>
+                    </div>
+                  </button>
+
+                  {/* Card Details + Quick Actions */}
+                  <div className="p-4 flex-1 flex flex-col justify-between gap-4">
+                    <p className="text-sm text-slate-600 line-clamp-2">
+                      {item.description || 'คลิกที่หน้าปกเพื่อเพิ่มหรือแก้ไขคำถาม รูปภาพ และวิดีโอประกอบ'}
+                    </p>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        data-testid={`open-quiz-editor-${item.id}`}
+                        onClick={() => handleOpenQuizEditor(item.id)}
+                        className="flex-1 min-h-[40px] px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>สร้าง/แก้ไขคำถาม</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        data-testid={idx === 0 ? 'host-launch-room' : `host-launch-room-${item.id}`}
+                        onClick={() => void handleLaunchRoom(item)}
+                        disabled={launchingRoom || signingIn}
+                        className="flex-1 min-h-[40px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>{launchingRoom ? 'กำลังเปิด...' : 'เปิดห้องแข่ง'}</span>
+                      </button>
+
+                      {quizSets.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteQuizSet(item.id)}
+                          aria-label={`ลบชุดคำถาม ${item.title}`}
+                          className="min-h-[40px] min-w-[40px] rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            {/* Create New Quiz Cover Card */}
+            <button
+              type="button"
+              onClick={handleCreateNewQuizSet}
+              className="min-h-[260px] rounded-3xl border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/40 p-6 flex flex-col items-center justify-center text-center gap-3 transition-colors group"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-colors">
+                <Plus className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="font-extrabold text-base text-slate-900">
+                  สร้างชุดคำถามใหม่
+                </div>
+                <div className="text-xs text-slate-500">
+                  สร้างชุดคำถามใหม่ตั้งแต่ต้น ใส่รูปภาพและวิดีโอได้ไม่จำกัด
+                </div>
+              </div>
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // MODERATOR LEVEL 2: QUIZ BUILDER & CSV MANAGER (เมื่อกดเข้าหน้าปกชุดคำถาม)
   // =========================================================================
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-      <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      {csvFileInput}
+
+      {/* Top Header with buttons firmly aligned to the top-right */}
+      <header className="border-b border-slate-200 bg-white px-4 sm:px-6 py-3.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
-            onClick={onBackHome}
-            className="min-h-[40px] px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
+            data-testid="back-to-library-btn"
+            onClick={() => {
+              setPanelMode('LIBRARY');
+              setCsvNotice(null);
+            }}
+            className="min-h-[38px] px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>หน้าแรก</span>
+            <span>กลับไปที่คลัง</span>
           </button>
-          <div>
-            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900">
-              จัดการชุดคำถามสำหรับ Moderator
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-extrabold text-slate-900 truncate">
+              {quiz.title || 'แก้ไขชุดคำถาม'}
             </h1>
-            <p className="text-xs text-slate-500">
-              เชื่อมต่อ Firebase เรียลไทม์ · สร้างคำถาม เพิ่มรูปภาพ/วิดีโอ หรืออัปโหลดไฟล์ CSV ได้ทันที (สูงสุด 200 คน/ห้อง)
+            <p className="text-xs text-slate-500 truncate">
+              แก้ไขคำถาม ตัวเลือก รูปภาพ/วิดีโอ หรืออัปโหลด CSV ({quiz.questions.length} ข้อ)
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="w-full lg:w-auto lg:ml-auto flex flex-wrap lg:flex-nowrap items-center justify-end gap-2 lg:shrink-0">
           {authReady && !user && (
             <button
               type="button"
               onClick={() => void signInWithGoogle()}
               disabled={signingIn}
-              className="min-h-[42px] px-3.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-bold inline-flex items-center gap-2 whitespace-nowrap"
+              className="min-h-[38px] px-2.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap"
             >
-              <LogIn className="w-4 h-4" />
-              <span>{signingIn ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ Google'}</span>
+              <LogIn className="w-3.5 h-3.5" />
+              <span>{signingIn ? 'กำลังเข้าสู่ระบบ...' : 'Google'}</span>
             </button>
           )}
           {user && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
-              <span className="truncate max-w-[140px]">
+            <div className="min-h-[38px] flex items-center gap-1.5 px-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+              <span className="truncate max-w-[100px]">
                 {user.displayName || user.email}
               </span>
               <button
@@ -990,55 +1367,47 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             </div>
           )}
 
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleCsvImport}
-            className="hidden"
-            aria-label="อัปโหลดไฟล์คำถาม CSV"
-          />
           <button
             type="button"
             onClick={() => csvInputRef.current?.click()}
-            className="min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap"
+            className="min-h-[38px] px-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            <Upload className="w-4 h-4 text-indigo-600" />
-            <span>นำเข้าไฟล์ CSV</span>
+            <Upload className="w-3.5 h-3.5 text-indigo-600" />
+            <span>นำเข้า CSV</span>
           </button>
           <button
             type="button"
             onClick={() => downloadTextFile('quiz-template.csv', '\uFEFF' + SAMPLE_CSV_TEMPLATE)}
-            className="min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-sm font-medium inline-flex items-center gap-2 whitespace-nowrap"
+            className="min-h-[38px] px-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            <FileSpreadsheet className="w-4 h-4 text-slate-500" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
             <span>ตัวอย่าง CSV</span>
           </button>
           <button
             type="button"
             onClick={() => downloadTextFile('quiz-questions.csv', exportQuizToCsv(quiz.questions))}
-            className="min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-sm font-medium inline-flex items-center gap-2 whitespace-nowrap"
+            className="min-h-[38px] px-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            <Download className="w-4 h-4 text-slate-500" />
+            <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>ส่งออก CSV</span>
           </button>
           <button
             type="button"
             onClick={() => void handleSaveQuiz()}
             disabled={savingQuiz}
-            className="min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap"
+            className="min-h-[38px] px-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            <Save className="w-4 h-4 text-indigo-600" />
-            <span>{savingQuiz ? 'กำลังบันทึก...' : 'บันทึกคำถาม'}</span>
+            <Save className="w-3.5 h-3.5 text-indigo-600" />
+            <span>{savingQuiz ? 'กำลังบันทึก...' : 'บันทึก'}</span>
           </button>
           <button
             type="button"
             data-testid="host-launch-room"
             onClick={() => void handleLaunchRoom()}
             disabled={launchingRoom || signingIn}
-            className="min-h-[42px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold inline-flex items-center gap-2 shadow-sm whitespace-nowrap"
+            className="min-h-[38px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 shadow-sm whitespace-nowrap"
           >
-            <Play className="w-4 h-4 fill-current" />
+            <Play className="w-3.5 h-3.5 fill-current" />
             <span>{launchingRoom ? 'กำลังเปิดห้อง...' : 'เปิดห้องแข่งขัน'}</span>
           </button>
         </div>
@@ -1077,7 +1446,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               type="text"
               maxLength={120}
               value={quiz.title}
-              onChange={(e) => setQuiz((prev) => ({ ...prev, title: e.target.value }))}
+              onChange={(e) => setActiveQuiz((prev) => ({ ...prev, title: e.target.value }))}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="เช่น ศึกชิงเจ้าความรู้ทั่วไป"
             />
@@ -1091,7 +1460,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               type="text"
               maxLength={300}
               value={quiz.description}
-              onChange={(e) => setQuiz((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => setActiveQuiz((prev) => ({ ...prev, description: e.target.value }))}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="รายละเอียดเพิ่มเติมสำหรับชุดคำถาม"
             />

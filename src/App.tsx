@@ -3,6 +3,7 @@ import { MonitorPlay, QrCode, Smartphone, Users } from 'lucide-react';
 import { AVATARS, MAX_PLAYERS_PER_ROOM } from './shared/types';
 import { CuteAvatar } from './components/CuteAvatar';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { HowToPlaySection } from './components/HowToPlaySection';
 import { ModeratorView } from './components/ModeratorView';
 import { PlayerView } from './components/PlayerView';
 import { FirebaseProvider } from './firebase/FirebaseProvider';
@@ -72,7 +73,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {/* Clean 3-zone Top Bar */}
-      <header className="border-b border-slate-200 bg-white px-6 py-4 flex items-center justify-between gap-8">
+      <header className="border-b border-slate-200 bg-white px-4 sm:px-6 py-4 flex items-center justify-between gap-4 sm:gap-8">
         <a
           href="/"
           className="font-display text-xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
@@ -84,6 +85,12 @@ function AppContent() {
           <a href="#roles" className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0">
             เลือกโหมดเล่น
           </a>
+          <a
+            href="#how-to-play"
+            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
+          >
+            วิธีการเล่น
+          </a>
           <a href="#characters" className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0">
             ตัวละครน่ารัก
           </a>
@@ -92,11 +99,17 @@ function AppContent() {
           </a>
         </nav>
 
-        <div className="shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          <a
+            href="#how-to-play"
+            className="md:hidden text-xs font-bold text-indigo-600 hover:text-indigo-700 whitespace-nowrap shrink-0"
+          >
+            วิธีการเล่น
+          </a>
           <button
             type="button"
             onClick={() => setMode('PLAYER')}
-            className="min-h-[40px] px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold transition-colors whitespace-nowrap shrink-0"
           >
             เข้าห้องด้วยรหัส 4 หลัก
           </button>
@@ -166,6 +179,9 @@ function AppContent() {
             </div>
           </div>
         </section>
+
+        {/* Illustrated How-to-Play Section */}
+        <HowToPlaySection onJoinPlayer={() => setMode('PLAYER')} />
 
         {/* Cute Characters Showcase */}
         <section id="characters" className="rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 space-y-5">
