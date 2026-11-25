@@ -20,6 +20,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  ShieldCheck,
   Trash2,
   Trophy,
   Upload,
@@ -149,8 +150,16 @@ function downloadTextFile(filename: string, content: string, mime = 'text/csv;ch
 }
 
 export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
-  const { user, authReady, signingIn, authError, signInWithGoogle, signOutUser, clearAuthError } =
-    useFirebase();
+  const {
+    user,
+    authReady,
+    signingIn,
+    authError,
+    sessionExpiredNotice,
+    signInWithGoogle,
+    signOutUser,
+    clearAuthError,
+  } = useFirebase();
 
   const [quizSets, setQuizSets] = useState<QuizSet[]>(() => loadLocalQuizzes());
   const [activeQuizId, setActiveQuizId] = useState<string>(() => loadLocalQuizzes()[0]?.id || DEFAULT_QUIZ.id);
@@ -198,6 +207,18 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       // ignore storage quota errors
     }
   }, [quizSets]);
+
+  // Reset sensitive moderator live state if signed out or auto-logged out after 60 min
+  useEffect(() => {
+    if (!authReady || user) return;
+    loadedSavedForUidRef.current = null;
+    setActiveRoomCode(null);
+    setRoomDoc(null);
+    setActiveLiveQuiz(null);
+    setPlayersDocs([]);
+    setAnswersDocs([]);
+    setPendingDelete(null);
+  }, [authReady, user]);
 
   // Load Moderator's saved quizzes from Firestore once authenticated
   useEffect(() => {
@@ -667,6 +688,112 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       // ignore clipboard error
     }
   };
+
+  // =========================================================================
+  // MODERATOR AUTHENTICATION GATE (ต้องเข้าสู่ระบบ Google / Gmail ก่อนใช้งาน)
+  // =========================================================================
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+        <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="min-h-[38px] px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>หน้าแรก</span>
+          </button>
+          <span className="text-sm font-bold text-slate-500">โหมด Moderator</span>
+        </header>
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-sm p-8 text-center space-y-3">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center animate-pulse">
+              <ShieldCheck className="w-6 h-6 text-indigo-600" />
+            </div>
+            <h1 className="text-lg font-extrabold text-slate-900">กำลังตรวจสอบสิทธิ์ผู้ใช้งาน...</h1>
+            <p className="text-sm text-slate-500">กรุณารอสักครู่</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user) {
+    const noticeMessage = sessionExpiredNotice || authError;
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+        <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="min-h-[38px] px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>หน้าแรก</span>
+          </button>
+          <span className="text-sm font-bold text-slate-500">สำหรับ Moderator</span>
+        </header>
+
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
+          <section
+            data-testid="moderator-auth-gate"
+            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-lg p-7 sm:p-8 space-y-6 text-center"
+          >
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center">
+              <ShieldCheck className="w-8 h-8 text-indigo-600" />
+            </div>
+
+            <div className="space-y-2">
+              <h1 className="text-2xl font-extrabold text-slate-900">
+                เข้าสู่ระบบสำหรับ Moderator
+              </h1>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                กรุณาเข้าสู่ระบบด้วยบัญชี Google (Gmail) ก่อนสร้างชุดคำถาม จัดการข้อสอบ หรือเปิดห้องแข่งขัน เพื่อป้องกันผู้ที่ไม่ได้รับสิทธิ์เข้าใช้งาน
+              </p>
+            </div>
+
+            {noticeMessage && (
+              <div
+                role="alert"
+                data-testid="moderator-auth-notice"
+                className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-medium text-amber-900 text-left"
+              >
+                {noticeMessage}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                data-testid="moderator-login-btn"
+                onClick={() => void signInWithGoogle()}
+                disabled={signingIn}
+                className="w-full min-h-[48px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold text-sm inline-flex items-center justify-center gap-2.5 shadow-md shadow-indigo-600/20 transition-colors"
+              >
+                <LogIn className="w-5 h-5" />
+                <span>
+                  {signingIn ? 'กำลังเปิดหน้าต่าง Google...' : 'เข้าสู่ระบบด้วย Google (Gmail)'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="w-full min-h-[44px] px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                กลับไปหน้าแรก
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              หากเคยเข้าสู่ระบบไว้แล้วจะใช้งานต่อได้ทันที และจะออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งานเกิน 60 นาที
+            </p>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   // =========================================================================
   // LIVE HOST STAGE (LOBBY / QUESTION / REVEAL / LEADERBOARD / ENDED)

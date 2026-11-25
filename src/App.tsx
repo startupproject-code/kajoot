@@ -6,7 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { HowToPlaySection } from './components/HowToPlaySection';
 import { ModeratorView } from './components/ModeratorView';
 import { PlayerView } from './components/PlayerView';
-import { FirebaseProvider } from './firebase/FirebaseProvider';
+import { FirebaseProvider, useFirebase } from './firebase/FirebaseProvider';
 
 type AppMode = 'HOME' | 'MODERATOR' | 'PLAYER';
 
@@ -21,8 +21,17 @@ export default function App() {
 }
 
 function AppContent() {
+  const { user, authReady, signingIn, signInWithGoogle, clearAuthError } = useFirebase();
   const [mode, setMode] = useState<AppMode>('HOME');
   const [joinCodeFromUrl, setJoinCodeFromUrl] = useState('');
+
+  const handleEnterModerator = () => {
+    clearAuthError();
+    setMode('MODERATOR');
+    if (authReady && !user && !signingIn) {
+      void signInWithGoogle();
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -150,7 +159,7 @@ function AppContent() {
               <button
                 type="button"
                 data-testid="enter-moderator-btn"
-                onClick={() => setMode('MODERATOR')}
+                onClick={handleEnterModerator}
                 className="w-full min-h-[46px] rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-sm transition-colors"
               >
                 สร้างห้องและจัดการคำถาม
