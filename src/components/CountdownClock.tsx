@@ -10,8 +10,9 @@ export const CountdownClock: React.FC<CountdownClockProps> = ({
   remainingSec,
   size = 'lg',
 }) => {
-  const isUrgent = remainingSec <= 10;
   const displaySec = Math.max(0, Math.round(remainingSec));
+  const isTimeUp = displaySec === 0;
+  const isUrgent = remainingSec <= 10;
 
   if (size === 'md') {
     return (
@@ -27,12 +28,18 @@ export const CountdownClock: React.FC<CountdownClockProps> = ({
         <Clock className={`w-4 h-4 ${isUrgent ? 'text-red-500' : 'text-indigo-400'}`} />
         <span
           className={`text-2xl leading-none ${
-            isUrgent ? 'text-red-500 animate-urgent-blink' : 'text-white'
+            isTimeUp
+              ? 'text-red-500'
+              : isUrgent
+              ? 'text-red-500 animate-urgent-blink'
+              : 'text-white'
           }`}
         >
           {displaySec}
         </span>
-        <span className="text-xs font-sans font-medium opacity-80">วินาที</span>
+        <span className="text-xs font-sans font-medium opacity-80">
+          {isTimeUp ? 'หมดเวลา' : 'วินาที'}
+        </span>
       </div>
     );
   }
@@ -41,15 +48,19 @@ export const CountdownClock: React.FC<CountdownClockProps> = ({
     <div
       data-testid="countdown-timer"
       data-urgent={isUrgent ? 'true' : 'false'}
-      className={`inline-flex flex-col items-center justify-center min-w-[104px] px-5 py-3 rounded-2xl border-2 transition-colors ${
+      className={`inline-flex flex-col items-center justify-center min-w-[104px] px-5 py-2.5 rounded-2xl border-2 transition-colors ${
         isUrgent
           ? 'bg-red-950/60 border-red-500 shadow-lg shadow-red-600/20'
           : 'bg-slate-800/90 border-slate-700'
       }`}
     >
       <span
-        className={`font-mono tabular-nums text-5xl font-extrabold leading-none ${
-          isUrgent ? 'text-red-500 animate-urgent-blink' : 'text-white'
+        className={`font-mono tabular-nums text-4xl sm:text-5xl font-extrabold leading-none ${
+          isTimeUp
+            ? 'text-red-500'
+            : isUrgent
+            ? 'text-red-500 animate-urgent-blink'
+            : 'text-white'
         }`}
       >
         {displaySec}
@@ -59,7 +70,7 @@ export const CountdownClock: React.FC<CountdownClockProps> = ({
           isUrgent ? 'text-red-300' : 'text-slate-400'
         }`}
       >
-        {isUrgent ? 'ใกล้หมดเวลา!' : 'วินาที'}
+        {isTimeUp ? 'หมดเวลา' : isUrgent ? 'ใกล้หมดเวลา!' : 'วินาที'}
       </span>
     </div>
   );

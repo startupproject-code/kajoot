@@ -644,10 +644,16 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     const q = roomState.currentQuestion;
     const totalVotes = roomState.answerCounts.reduce((acc, v) => acc + v, 0);
 
+    const isQuestionOrReveal = roomState.phase === 'QUESTION' || roomState.phase === 'REVEAL';
+
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+      <div
+        className={`${
+          isQuestionOrReveal ? 'min-h-[100dvh] md:h-[100dvh] md:overflow-hidden' : 'min-h-[100dvh]'
+        } bg-slate-900 text-slate-100 flex flex-col`}
+      >
         {/* Top Broadcast Bar */}
-        <header className="border-b border-slate-800 bg-slate-950/70 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+        <header className="shrink-0 border-b border-slate-800 bg-slate-950/70 px-4 sm:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <button
               type="button"
@@ -801,9 +807,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
         {/* PHASE: QUESTION & REVEAL */}
         {(roomState.phase === 'QUESTION' || roomState.phase === 'REVEAL') && q && (
-          <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-6 flex flex-col justify-between gap-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="space-y-1">
+          <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col justify-between gap-3">
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
                 <div className="text-sm font-semibold text-indigo-300">
                   คำถามข้อที่ {roomState.currentQuestionIndex + 1} จาก {roomState.totalQuestions}
                 </div>
@@ -817,50 +823,60 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               </div>
             </div>
 
-            <div className="rounded-3xl bg-slate-800/80 border border-slate-700 p-6 sm:p-8 text-center space-y-4">
-              <h2 className="text-2xl sm:text-4xl font-extrabold text-white leading-snug text-balance">
-                {q.text}
-              </h2>
-              <MediaStage imageUrl={q.imageUrl} videoUrl={q.videoUrl} />
+            <div
+              className={`flex-1 min-h-0 grid gap-3 items-stretch ${
+                roomState.phase === 'REVEAL' ? 'grid-cols-1 md:grid-cols-12' : 'grid-cols-1'
+              }`}
+            >
+              <div
+                className={`${
+                  roomState.phase === 'REVEAL' ? 'md:col-span-7' : ''
+                } min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/80 border border-slate-700 px-5 py-3.5 flex flex-col items-center justify-center text-center gap-2 overflow-hidden`}
+              >
+                <h2 className="shrink-0 text-xl sm:text-2xl lg:text-3xl font-extrabold text-white leading-snug text-balance">
+                  {q.text}
+                </h2>
+                <MediaStage imageUrl={q.imageUrl} videoUrl={q.videoUrl} hostFit={true} />
+              </div>
+
+              {roomState.phase === 'REVEAL' && (
+                <div className="md:col-span-5 min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/70 border border-slate-700 p-4 flex flex-col justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-200 shrink-0">
+                    <BarChart3 className="w-4 h-4 text-indigo-400" />
+                    <span>สถิติการตอบของผู้เล่นในข้อนี้</span>
+                  </div>
+                  <div className="flex-1 min-h-[120px] grid grid-cols-4 gap-3 items-end">
+                    {([0, 1, 2, 3] as AnswerIndex[]).map((idx) => {
+                      const count = roomState.answerCounts[idx];
+                      const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+                      const isCorrect = q.correctIndex === idx;
+                      const style = ANSWER_STYLES[idx];
+                      return (
+                        <div key={idx} className="flex flex-col items-center h-full justify-end gap-1.5">
+                          <span className="font-mono tabular-nums text-xs font-bold text-slate-200">
+                            {count} ({pct}%)
+                          </span>
+                          <div className="w-full max-w-[64px] flex-1 min-h-[56px] max-h-32 bg-slate-900 rounded-t-lg flex items-end overflow-hidden">
+                            <div
+                              className={`w-full ${style.barClass} ${
+                                count === 0 ? 'opacity-25' : isCorrect ? 'opacity-100' : 'opacity-50'
+                              } transition-all duration-300`}
+                              style={{ height: count === 0 ? '4px' : `${Math.max(14, pct)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1 shrink-0">
+                            {style.letter}
+                            {isCorrect && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {roomState.phase === 'REVEAL' && (
-              <div className="rounded-2xl bg-slate-800/70 border border-slate-700 p-4 sm:p-5">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-200 mb-3">
-                  <BarChart3 className="w-4 h-4 text-indigo-400" />
-                  <span>สถิติการตอบของผู้เล่นในข้อนี้</span>
-                </div>
-                <div className="grid grid-cols-4 gap-3 items-end h-28">
-                  {([0, 1, 2, 3] as AnswerIndex[]).map((idx) => {
-                    const count = roomState.answerCounts[idx];
-                    const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
-                    const isCorrect = q.correctIndex === idx;
-                    const style = ANSWER_STYLES[idx];
-                    return (
-                      <div key={idx} className="flex flex-col items-center h-full justify-end gap-1.5">
-                        <span className="font-mono tabular-nums text-xs font-bold text-slate-200">
-                          {count} ({pct}%)
-                        </span>
-                        <div className="w-full max-w-[68px] bg-slate-900 rounded-t-lg h-16 flex items-end overflow-hidden">
-                          <div
-                            className={`w-full ${style.barClass} ${
-                              count === 0 ? 'opacity-25' : isCorrect ? 'opacity-100' : 'opacity-50'
-                            } transition-all duration-300`}
-                            style={{ height: count === 0 ? '4px' : `${Math.max(14, pct)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                          {style.letter}
-                          {isCorrect && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
               {([0, 1, 2, 3] as AnswerIndex[]).map((idx) => {
                 const style = ANSWER_STYLES[idx];
                 const isReveal = roomState.phase === 'REVEAL';
@@ -869,7 +885,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 return (
                   <div
                     key={idx}
-                    className={`rounded-2xl px-5 py-4 flex items-center justify-between gap-3 transition-all ${style.bgClass} ${
+                    className={`rounded-2xl px-4 py-3 flex items-center justify-between gap-3 transition-all ${style.bgClass} ${
                       isReveal
                         ? isCorrect
                           ? 'ring-4 ring-emerald-300 shadow-xl'
@@ -877,11 +893,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                         : ''
                     }`}
                   >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <span className="w-9 h-9 rounded-xl bg-black/20 flex items-center justify-center shrink-0">
-                        <AnswerShapeIcon index={idx} className="w-5 h-5" />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-8 h-8 rounded-xl bg-black/20 flex items-center justify-center shrink-0">
+                        <AnswerShapeIcon index={idx} className="w-4 h-4" />
                       </span>
-                      <span className="font-bold text-lg sm:text-xl leading-snug">
+                      <span className="font-bold text-sm sm:text-base lg:text-lg leading-snug line-clamp-2">
                         {style.letter}. {q.options[idx]}
                       </span>
                     </div>
@@ -896,7 +912,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               })}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => {

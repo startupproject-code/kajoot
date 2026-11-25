@@ -249,8 +249,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   // =========================================================================
   if (step === 'ENTER_CODE') {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-        <header className="px-4 sm:px-8 py-4 flex items-center justify-between border-b border-slate-200 bg-white">
+      <div className="min-h-[100dvh] bg-slate-50 text-slate-900 flex flex-col">
+        <header className="px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between border-b border-slate-200 bg-white">
           <button
             type="button"
             onClick={onBackHome}
@@ -262,8 +262,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           <span className="text-sm font-bold text-slate-600">โหมดผู้เล่น (Player)</span>
         </header>
 
-        <main className="flex-1 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+        <main className="flex-1 flex items-start md:items-center justify-center px-4 pt-4 pb-6 sm:pt-7 md:py-8">
+          <div className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-5 sm:p-7 shadow-sm space-y-5">
             <div className="text-center space-y-1.5">
               <h1 className="text-2xl font-extrabold text-slate-900">
                 เข้าร่วมห้องแข่งขัน
@@ -355,8 +355,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const selectedAvatarMeta = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
 
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-        <header className="px-4 sm:px-8 py-4 flex items-center justify-between border-b border-slate-200 bg-white">
+      <div className="min-h-[100dvh] bg-slate-50 text-slate-900 flex flex-col">
+        <header className="px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between border-b border-slate-200 bg-white">
           <button
             type="button"
             onClick={() => {
@@ -373,7 +373,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           </span>
         </header>
 
-        <main className="flex-1 flex items-center justify-center p-3 sm:p-6">
+        <main className="flex-1 flex items-start md:items-center justify-center px-3 pt-4 pb-6 sm:px-6 sm:pt-7 md:py-8">
           <form
             onSubmit={handleJoinSubmit}
             className="w-full max-w-xl rounded-3xl bg-white border border-slate-200 p-5 sm:p-7 shadow-sm space-y-5"

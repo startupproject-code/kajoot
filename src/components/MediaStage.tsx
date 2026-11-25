@@ -6,12 +6,14 @@ interface MediaStageProps {
   imageUrl?: string;
   videoUrl?: string;
   compact?: boolean;
+  hostFit?: boolean;
 }
 
 export const MediaStage: React.FC<MediaStageProps> = ({
   imageUrl,
   videoUrl,
   compact = false,
+  hostFit = false,
 }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -27,10 +29,18 @@ export const MediaStage: React.FC<MediaStageProps> = ({
     return null;
   }
 
-  const maxHClass = compact ? 'max-h-24 sm:max-h-36' : 'max-h-72';
+  const maxHClass = compact
+    ? 'max-h-24 sm:max-h-36'
+    : hostFit
+    ? 'max-h-36 sm:max-h-40 md:max-h-[24vh]'
+    : 'max-h-72';
 
   return (
-    <div className={`w-full flex flex-col sm:flex-row items-center justify-center gap-3 ${compact ? 'my-1' : 'my-3'}`}>
+    <div
+      className={`w-full flex flex-col sm:flex-row items-center justify-center gap-3 ${
+        compact || hostFit ? 'my-1' : 'my-3'
+      }`}
+    >
       {hasImage && (
         <div className="w-full max-w-md rounded-2xl overflow-hidden bg-slate-900/60 border border-slate-700/80 flex items-center justify-center">
           {!imgError ? (
