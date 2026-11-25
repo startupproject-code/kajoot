@@ -1,7 +1,24 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import appletConfig from '../../firebase-applet-config.json';
+
+// หากต้องการกำหนดค่า Firebase / Google API Key เองในโค้ดหรือไฟล์ .env (เช่น ก่อนอัปขึ้น GitHub)
+// ให้ใส่ค่าจริงแทนที่ 'xxxxxxxx' ด้านล่างหรือผ่าน VITE_FIREBASE_* environment variables
+const MANUAL_FIREBASE_CONFIG = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'xxxxxxxx',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'xxxxxxxx',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'xxxxxxxx',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'xxxxxxxx',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || 'xxxxxxxx',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || 'xxxxxxxx',
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || 'xxxxxxxx',
+};
+
+const firebaseConfig =
+  MANUAL_FIREBASE_CONFIG.apiKey && MANUAL_FIREBASE_CONFIG.apiKey !== 'xxxxxxxx'
+    ? MANUAL_FIREBASE_CONFIG
+    : appletConfig;
 
 const app = initializeApp(firebaseConfig);
 

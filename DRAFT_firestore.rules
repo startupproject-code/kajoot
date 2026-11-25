@@ -130,7 +130,12 @@ service cloud.firestore {
         && data.answerCounts[2] is int && data.answerCounts[2] >= 0
         && data.answerCounts[3] is int && data.answerCounts[3] >= 0
         && data.leaderboard is list && data.leaderboard.size() <= 200
-        && (data.leaderboard.size() == 0 || (data.leaderboard[0] is map && data.leaderboard[0].keys().hasAll(['id', 'name', 'avatarId', 'score', 'rank'])))
+        && (data.leaderboard.size() == 0 || (
+          data.leaderboard[0] is map
+          && data.leaderboard[0].keys().hasAll(['id', 'name', 'avatarId', 'score', 'rank'])
+          && data.leaderboard[0].name is string && data.leaderboard[0].name.size() <= 24
+          && data.leaderboard[0].score is int && data.leaderboard[0].score >= 0
+        ))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -159,8 +164,8 @@ service cloud.firestore {
           'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'connected',
           'joinedAt', 'updatedAt'
         ])
-        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id == playerId
-        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid == playerId
+        && data.id is string && data.id.size() >= 12 && data.id.size() <= 128 && data.id == playerId
+        && data.uid is string && data.uid.size() >= 12 && data.uid.size() <= 128 && data.uid == playerId
         && data.roomCode is string && data.roomCode.size() == 4 && data.roomCode == roomCode
         && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 24
@@ -182,14 +187,14 @@ service cloud.firestore {
     function isValidRoomAnswer(data, roomCode, answerId) {
       return data.keys().hasAll(['id', 'roomCode', 'hostUid', 'playerUid', 'questionIndex', 'choice', 'submittedAt'])
         && data.keys().hasOnly(['id', 'roomCode', 'hostUid', 'playerUid', 'questionIndex', 'choice', 'submittedAt'])
-        && data.id is string && data.id.size() >= 3 && data.id.size() <= 140 && data.id == answerId
+        && data.id is string && data.id.size() >= 14 && data.id.size() <= 140 && data.id == answerId
         && data.roomCode is string && data.roomCode.size() == 4 && data.roomCode == roomCode
         && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
-        && data.playerUid is string && data.playerUid.size() >= 1 && data.playerUid.size() <= 128 && data.playerUid == request.auth.uid
+        && data.playerUid is string && data.playerUid.size() >= 12 && data.playerUid.size() <= 128
         && data.questionIndex is int && data.questionIndex >= 0 && data.questionIndex <= 100
         && data.choice is int && data.choice >= 0 && data.choice <= 3
         && data.submittedAt is timestamp
-        && answerId == (string(data.questionIndex) + '_' + request.auth.uid);
+        && answerId == (string(data.questionIndex) + '_' + data.playerUid);
     }
 
     // =========================================================================
@@ -240,10 +245,12 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // /rooms/{roomCode} — Live Quiz Room (Zero PII)
+    // /rooms/{roomCode} — Live Quiz Room (Zero PII, Guest QR Join Allowed)
     // =========================================================================
     match /rooms/{roomCode} {
-      allow get: if isVerifiedUser() && isValidRoomCode(roomCode);
+      // Guest players who scanned the QR code (knowing the 4-digit roomCode) can read room state
+      allow get: if isValidRoomCode(roomCode);
+      // Only authenticated hosts can list their own rooms
       allow list: if isVerifiedUser() && resource.data.hostUid == request.auth.uid;
 
       allow create: if isVerifiedUser()
@@ -269,21 +276,17 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action: Host syncs lobby players / answer tallies
           (incoming().phase == existing().phase && incoming().diff(existing()).affectedKeys().hasOnly(['answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
-          // Action: Host starts or advances to a question
           (incoming().phase == 'QUESTION' && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestionIndex', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
-          // Action: Host reveals correct answer & updates leaderboard
           (incoming().phase == 'REVEAL' && existing().phase == 'QUESTION' && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
-          // Action: Host shows leaderboard or ends game
-          ((incoming().phase == 'LEADERBOARD' || incoming().phase == 'ENDED') && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'totalPlayers', 'leaderboard', 'updatedAt']))
+          ((incoming().phase == 'LEADERBOARD' || incoming().phase == 'ENDED') && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt']))
         );
 
       allow delete: if isVerifiedUser()
         && isValidRoomCode(roomCode)
         && existing().hostUid == request.auth.uid;
 
-      // /rooms/{roomCode}/hostData/{docId} — Private Answer Keys
+      // /rooms/{roomCode}/hostData/{docId} — Host-only Private Answer Keys
       match /hostData/{docId} {
         allow get: if isVerifiedUser()
           && isValidRoomCode(roomCode)
@@ -314,19 +317,13 @@ service cloud.firestore {
           && existing().hostUid == request.auth.uid;
       }
 
-      // /rooms/{roomCode}/players/{playerId} — Up to 200 Players
+      // /rooms/{roomCode}/players/{playerId} — Guest QR Players (Up to 200, Zero PII)
       match /players/{playerId} {
-        allow get: if isVerifiedUser()
-          && isValidRoomCode(roomCode)
-          && isValidId(playerId)
-          && (playerId == request.auth.uid || existing().hostUid == request.auth.uid);
-        allow list: if isVerifiedUser()
-          && (resource.data.hostUid == request.auth.uid || resource.data.uid == request.auth.uid);
+        allow get: if isValidRoomCode(roomCode) && isValidId(playerId);
+        allow list: if isVerifiedUser() && resource.data.hostUid == request.auth.uid;
 
-        allow create: if isVerifiedUser()
-          && isValidRoomCode(roomCode)
+        allow create: if isValidRoomCode(roomCode)
           && isValidId(playerId)
-          && playerId == request.auth.uid
           && isValidRoomPlayer(incoming(), roomCode, playerId)
           && incoming().score == 0
           && incoming().streak == 0
@@ -343,8 +340,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.totalPlayers < 200
           && incoming().hostUid == get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid;
 
-        allow update: if isVerifiedUser()
-          && isValidRoomCode(roomCode)
+        allow update: if isValidRoomCode(roomCode)
           && isValidId(playerId)
           && isValidRoomPlayer(incoming(), roomCode, playerId)
           && incoming().id == existing().id
@@ -355,12 +351,12 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase != 'ENDED'
           && (
-            // Tier 1: Host updates player score, streak, and rank
-            (existing().hostUid == request.auth.uid
+            // Tier 1: Verified Host updates player score, streak, and rank
+            (isVerifiedUser()
+              && existing().hostUid == request.auth.uid
               && incoming().diff(existing()).affectedKeys().hasOnly(['score', 'streak', 'bestStreak', 'correctCount', 'answeredCount', 'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'updatedAt'])) ||
-            // Tier 2: Player updates own display profile & connection status only
-            (playerId == request.auth.uid
-              && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'connected', 'updatedAt']))
+            // Tier 2: Guest player updates own display profile & connection status only
+            (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'connected', 'updatedAt']))
           );
 
         allow delete: if isVerifiedUser()
@@ -369,21 +365,16 @@ service cloud.firestore {
           && existing().hostUid == request.auth.uid;
       }
 
-      // /rooms/{roomCode}/answers/{answerId} — Immutable Answer Submissions
+      // /rooms/{roomCode}/answers/{answerId} — Immutable Guest Answer Submissions
       match /answers/{answerId} {
-        allow get: if isVerifiedUser()
-          && isValidRoomCode(roomCode)
-          && isValidAnswerId(answerId)
-          && (existing().playerUid == request.auth.uid || existing().hostUid == request.auth.uid);
-        allow list: if isVerifiedUser()
-          && (resource.data.hostUid == request.auth.uid || resource.data.playerUid == request.auth.uid);
+        allow get: if isValidRoomCode(roomCode) && isValidAnswerId(answerId);
+        allow list: if isVerifiedUser() && resource.data.hostUid == request.auth.uid;
 
-        allow create: if isVerifiedUser()
-          && isValidRoomCode(roomCode)
+        allow create: if isValidRoomCode(roomCode)
           && isValidAnswerId(answerId)
           && isValidRoomAnswer(incoming(), roomCode, answerId)
           && incoming().submittedAt == request.time
-          && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+          && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(incoming().playerUid))
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase == 'QUESTION'
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.currentQuestionIndex == incoming().questionIndex
           && incoming().hostUid == get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid;

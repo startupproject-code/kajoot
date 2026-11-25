@@ -30,6 +30,34 @@ import {
 } from '../shared/types';
 import { db, handleFirestoreError, OperationType } from './firebaseClient';
 
+const GUEST_PLAYER_STORAGE_KEY = 'quizarena_guest_player_id';
+
+export function getOrCreateGuestPlayerId(): string {
+  try {
+    const existing = window.localStorage.getItem(GUEST_PLAYER_STORAGE_KEY);
+    if (existing && /^[a-zA-Z0-9_\-]{12,128}$/.test(existing)) {
+      return existing;
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  const rawUuid =
+    typeof window !== 'undefined' && window.crypto?.randomUUID
+      ? window.crypto.randomUUID().replace(/-/g, '')
+      : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}${Math.random()
+          .toString(36)
+          .slice(2)}`;
+  const generated = `p_${rawUuid}`.slice(0, 64);
+
+  try {
+    window.localStorage.setItem(GUEST_PLAYER_STORAGE_KEY, generated);
+  } catch {
+    // ignore storage errors
+  }
+  return generated;
+}
+
 export interface FirestoreRoomDoc {
   code: string;
   hostUid: string;
