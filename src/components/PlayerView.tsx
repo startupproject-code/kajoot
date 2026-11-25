@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Camera,
@@ -11,16 +11,23 @@ import {
   VolumeX,
   XCircle,
 } from 'lucide-react';
+import { useFirebase } from '../firebase/FirebaseProvider';
+import {
+  checkFirebaseRoom,
+  FirestorePlayerDoc,
+  FirestoreRoomDoc,
+  joinFirebaseRoom,
+  roomDocToPublicState,
+  subscribePlayerRoom,
+  submitFirebaseAnswer,
+} from '../firebase/firebaseQuizService';
 import {
   AnswerIndex,
   AvatarId,
   AVATARS,
   MAX_PLAYERS_PER_ROOM,
-  RoomPublicState,
-  ServerMessage,
 } from '../shared/types';
 import { soundFx } from '../utils/soundFx';
-import { useQuizSocket } from '../utils/useQuizSocket';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { AvatarCarousel } from './AvatarCarousel';
 import { CountdownClock } from './CountdownClock';
@@ -40,15 +47,22 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   initialRoomCode = '',
   onBackHome,
 }) => {
+  const { user, authReady, signingIn, authError, signInWithGoogle, clearAuthError } =
+    useFirebase();
+
   const [step, setStep] = useState<JoinStep>('ENTER_CODE');
   const [roomCode, setRoomCode] = useState(initialRoomCode);
+  const [verifiedHostUid, setVerifiedHostUid] = useState('');
   const [verifiedQuizTitle, setVerifiedQuizTitle] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [avatarId, setAvatarId] = useState<AvatarId>('cat');
-  const [playerId, setPlayerId] = useState<string | null>(null);
 
-  const [roomState, setRoomState] = useState<RoomPublicState | null>(null);
+  const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
+  const [selfPlayerDoc, setSelfPlayerDoc] = useState<FirestorePlayerDoc | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [selectedChoice, setSelectedChoice] = useState<AnswerIndex | null>(null);
+  const [joiningRoom, setJoiningRoom] = useState(false);
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [checkingRoom, setCheckingRoom] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -58,106 +72,91 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const lastSoundSecRef = useRef<number | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
   const lastQuestionIdxRef = useRef<number>(-1);
+  const submittedChoicesRef = useRef<Map<number, AnswerIndex>>(new Map());
 
-  const handleServerMsg = (msg: ServerMessage) => {
-    if (msg.type === 'error') {
-      setCheckingRoom(false);
-      setErrorMsg(msg.message);
-      return;
+  // Pre-fill default nickname from Google account if empty
+  useEffect(() => {
+    if (user?.displayName && !playerName) {
+      setPlayerName(user.displayName.trim().slice(0, 24));
     }
+  }, [user, playerName]);
 
-    if (msg.type === 'player:room_status') {
-      setCheckingRoom(false);
-      if (!msg.exists || msg.isFull) {
-        setErrorMsg(msg.error || 'ไม่สามารถเข้าห้องนี้ได้');
+  const verifyAndProceedToProfile = async (codeToCheck: string) => {
+    setCheckingRoom(true);
+    setErrorMsg(null);
+    try {
+      const res = await checkFirebaseRoom(codeToCheck);
+      if (!res.exists || res.isFull || !res.hostUid) {
+        setErrorMsg(res.error || 'ไม่สามารถเข้าห้องนี้ได้');
         return;
       }
-      setErrorMsg(null);
-      setRoomCode(msg.code);
-      setVerifiedQuizTitle(msg.quizTitle || 'เกมตอบคำถามความรู้ทั่วไป');
+      setRoomCode(res.code);
+      setVerifiedHostUid(res.hostUid);
+      setVerifiedQuizTitle(res.quizTitle || 'เกมตอบคำถามความรู้ทั่วไป');
       setStep('SETUP_PROFILE');
-      return;
-    }
-
-    if (msg.type === 'player:joined') {
-      setErrorMsg(null);
-      setPlayerId(msg.playerId);
-      setRoomState(msg.state);
-      setStep('IN_ROOM');
-      return;
-    }
-
-    if (msg.type === 'room:state') {
-      if (msg.yourPlayerId) {
-        setPlayerId(msg.yourPlayerId);
-      }
-      if (msg.state.currentQuestionIndex !== lastQuestionIdxRef.current) {
-        lastQuestionIdxRef.current = msg.state.currentQuestionIndex;
-        setSelectedChoice(null);
-      }
-      setRoomState(msg.state);
-      return;
-    }
-
-    if (msg.type === 'player:answer_ack') {
-      setSelectedChoice(msg.choice);
-      return;
-    }
-
-    if (msg.type === 'room:progress') {
-      setRoomState((prev) =>
-        prev
-          ? {
-              ...prev,
-              answeredCount: msg.answeredCount,
-              totalPlayers: msg.totalPlayers,
-              answerCounts: msg.answerCounts,
-              remainingSec: msg.remainingSec,
-            }
-          : prev
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'ไม่สามารถตรวจสอบห้องแข่งขันได้ กรุณาลองใหม่'
       );
-      return;
-    }
-
-    if (msg.type === 'room:tick') {
-      setRoomState((prev) =>
-        prev
-          ? {
-              ...prev,
-              remainingSec: msg.remainingSec,
-            }
-          : prev
-      );
+    } finally {
+      setCheckingRoom(false);
     }
   };
 
-  const { connected, send } = useQuizSocket(handleServerMsg);
-
-  // Auto-check room immediately if opened via QR link ?join=XXXX
+  // Auto-check room when opened via QR link ?join=XXXX and user is already authenticated
   useEffect(() => {
     if (
+      authReady &&
+      user &&
       !autoCheckedRef.current &&
-      /^\d{4}$/.test(initialRoomCode.trim())
+      /^\d{4}$/.test(initialRoomCode.trim()) &&
+      step === 'ENTER_CODE'
     ) {
       autoCheckedRef.current = true;
-      setCheckingRoom(true);
-      send({ type: 'player:check_room', code: initialRoomCode.trim() });
+      void verifyAndProceedToProfile(initialRoomCode.trim());
     }
-  }, [initialRoomCode, send]);
+  }, [authReady, user, initialRoomCode, step]);
 
-  // Rejoin automatically if socket reconnects while already in a room
+  // Subscribe to Firestore Room + Self Player Document while IN_ROOM and signed in
   useEffect(() => {
-    if (connected && step === 'IN_ROOM' && roomCode && playerName && playerId) {
-      send({
-        type: 'player:join',
-        code: roomCode,
-        name: playerName,
-        avatarId,
-        playerId,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+    if (!authReady || !user || step !== 'IN_ROOM' || !roomCode) return;
+
+    const unsub = subscribePlayerRoom(roomCode, user.uid, {
+      onRoom: (nextRoom) => {
+        if (nextRoom.currentQuestionIndex !== lastQuestionIdxRef.current) {
+          lastQuestionIdxRef.current = nextRoom.currentQuestionIndex;
+          const prevChoice = submittedChoicesRef.current.get(nextRoom.currentQuestionIndex);
+          setSelectedChoice(prevChoice ?? null);
+        }
+        setRoomDoc(nextRoom);
+      },
+      onPlayerSelf: (nextSelf) => {
+        setSelfPlayerDoc(nextSelf);
+      },
+      onMissing: () => {
+        setErrorMsg('ห้องแข่งขันนี้ถูกปิดแล้ว');
+        setStep('ENTER_CODE');
+        setRoomDoc(null);
+      },
+    });
+
+    return () => unsub();
+  }, [authReady, user, step, roomCode]);
+
+  // Smooth 250ms countdown clock during QUESTION phase
+  useEffect(() => {
+    if (!roomDoc || roomDoc.phase !== 'QUESTION') return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
+
+  const roomState = useMemo(() => {
+    if (!roomDoc) return null;
+    return roomDocToPublicState(roomDoc, nowMs);
+  }, [roomDoc, nowMs]);
 
   // Countdown beep-beep & reveal audio
   useEffect(() => {
@@ -177,13 +176,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         soundFx.playCountdownTick(roomState.remainingSec);
       }
     } else if (roomState.phase === 'REVEAL' && prevPhase === 'QUESTION') {
-      const me = roomState.players.find((p) => p.id === playerId);
+      const me =
+        selfPlayerDoc ?? roomState.players.find((p) => p.id === user?.uid);
       soundFx.playReveal(me?.lastCorrect ?? false);
       lastSoundSecRef.current = null;
     } else if (roomState.phase === 'ENDED' && prevPhase !== 'ENDED') {
       soundFx.playPodiumFanfare();
     }
-  }, [roomState, step, playerId]);
+  }, [roomState, step, selfPlayerDoc, user?.uid]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -191,20 +191,26 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     soundFx.setMuted(next);
   };
 
-  const handleCheckRoom = (codeToCheck: string) => {
+  const handleCheckRoom = async (codeToCheck: string) => {
     soundFx.unlock();
+    clearAuthError();
     const cleaned = codeToCheck.replace(/\D/g, '').slice(0, 4);
     setRoomCode(cleaned);
     if (cleaned.length !== 4) {
       setErrorMsg('กรุณากรอกรหัสห้องตัวเลข 4 หลัก');
       return;
     }
-    setErrorMsg(null);
-    setCheckingRoom(true);
-    send({ type: 'player:check_room', code: cleaned });
+
+    let authedUser = user;
+    if (!authedUser) {
+      authedUser = await signInWithGoogle();
+    }
+    if (!authedUser) return;
+
+    await verifyAndProceedToProfile(cleaned);
   };
 
-  const handleJoinSubmit = (e: React.FormEvent) => {
+  const handleJoinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFx.unlock();
     const cleanName = playerName.trim();
@@ -212,30 +218,61 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setErrorMsg('กรุณาตั้งชื่อผู้เล่นของคุณก่อนเข้าห้องรอคอย');
       return;
     }
+    if (!user) {
+      setErrorMsg('กรุณาเข้าสู่ระบบ Google ก่อนเข้าร่วมห้อง');
+      return;
+    }
+
     setErrorMsg(null);
-    send({
-      type: 'player:join',
-      code: roomCode,
-      name: cleanName,
-      avatarId,
-      playerId: playerId ?? undefined,
-    });
+    setJoiningRoom(true);
+    try {
+      await joinFirebaseRoom({
+        code: roomCode,
+        hostUid: verifiedHostUid,
+        uid: user.uid,
+        name: cleanName,
+        avatarId,
+      });
+      setStep('IN_ROOM');
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'ไม่สามารถเข้าห้องแข่งขันได้ กรุณาลองใหม่'
+      );
+    } finally {
+      setJoiningRoom(false);
+    }
   };
 
   const handleAnswer = (choice: AnswerIndex) => {
-    if (!roomState || roomState.phase !== 'QUESTION' || selectedChoice !== null) {
+    if (!roomState || !user || roomState.phase !== 'QUESTION' || selectedChoice !== null) {
       return;
     }
     soundFx.unlock();
     soundFx.playAnswerLock();
+    const qIdx = roomState.currentQuestionIndex;
+    submittedChoicesRef.current.set(qIdx, choice);
     setSelectedChoice(choice);
-    send({ type: 'player:answer', choice });
+
+    const hostUid = roomDoc?.hostUid || verifiedHostUid;
+    void submitFirebaseAnswer({
+      code: roomState.code,
+      hostUid,
+      playerUid: user.uid,
+      questionIndex: qIdx,
+      choice,
+    }).catch((err) => {
+      submittedChoicesRef.current.delete(qIdx);
+      setSelectedChoice(null);
+      setErrorMsg(err instanceof Error ? err.message : 'ส่งคำตอบไม่สำเร็จ');
+    });
   };
 
   // =========================================================================
-  // STEP 1: ENTER 4-DIGIT ROOM CODE OR SCAN QR
+  // STEP 1: ENTER 4-DIGIT ROOM CODE OR SCAN QR (+ 1-TAP GOOGLE CONNECT)
   // =========================================================================
   if (step === 'ENTER_CODE') {
+    const hasValidCode = /^\d{4}$/.test(roomCode);
+
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
         <header className="px-4 sm:px-8 py-4 flex items-center justify-between border-b border-slate-200 bg-white">
@@ -257,23 +294,25 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 เข้าร่วมห้องแข่งขัน
               </h1>
               <p className="text-sm text-slate-500">
-                กรอกรหัสห้อง 4 หลัก หรือสแกน QR Code จากหน้าจอ Moderator
+                {hasValidCode && !user
+                  ? `พบรหัสห้อง ${roomCode} จาก QR Code — กดเชื่อมต่อด้วย Google เพื่อเข้าห้อง`
+                  : 'กรอกรหัสห้อง 4 หลัก หรือสแกน QR Code จากหน้าจอ Moderator'}
               </p>
             </div>
 
-            {errorMsg && (
+            {(errorMsg || authError) && (
               <div
                 role="alert"
                 className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium"
               >
-                {errorMsg}
+                {errorMsg || authError}
               </div>
             )}
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                handleCheckRoom(roomCode);
+                void handleCheckRoom(roomCode);
               }}
               className="space-y-4"
             >
@@ -302,11 +341,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               <button
                 type="submit"
                 data-testid="player-check-room-btn"
-                disabled={checkingRoom}
+                disabled={checkingRoom || signingIn}
                 className="w-full min-h-[48px] rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-base inline-flex items-center justify-center gap-2 transition-colors"
               >
                 <LogIn className="w-5 h-5" />
-                <span>{checkingRoom ? 'กำลังตรวจสอบห้อง...' : 'เข้าสู่ห้อง'}</span>
+                <span>
+                  {signingIn
+                    ? 'กำลังเข้าสู่ระบบ Google...'
+                    : checkingRoom
+                    ? 'กำลังตรวจสอบห้อง...'
+                    : !user
+                    ? 'เชื่อมต่อ Google และเข้าสู่ห้อง'
+                    : 'เข้าสู่ห้อง'}
+                </span>
               </button>
             </form>
 
@@ -330,7 +377,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         <QrScannerModal
           open={scannerOpen}
           onClose={() => setScannerOpen(false)}
-          onDetected={(code) => handleCheckRoom(code)}
+          onDetected={(code) => void handleCheckRoom(code)}
         />
       </div>
     );
@@ -416,10 +463,11 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
             <button
               type="submit"
+              disabled={joiningRoom}
               data-testid="player-enter-lobby-btn"
-              className="w-full min-h-[48px] rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-sm transition-colors"
+              className="w-full min-h-[48px] rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold text-base shadow-sm transition-colors"
             >
-              เข้าสู่หน้าจอรอคอย
+              {joiningRoom ? 'กำลังเข้าสู่ห้อง...' : 'เข้าสู่หน้าจอรอคอย'}
             </button>
           </form>
         </main>
@@ -435,15 +483,16 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
         <div className="text-center space-y-2">
           <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-slate-300">กำลังเชื่อมต่อห้องแข่งขัน...</p>
+          <p className="text-sm text-slate-300">กำลังเชื่อมต่อห้องแข่งขัน Firebase...</p>
         </div>
       </div>
     );
   }
 
-  const me = roomState.players.find((p) => p.id === playerId);
+  const me =
+    selfPlayerDoc ??
+    roomState.players.find((p) => p.id === user?.uid);
   const q = roomState.currentQuestion;
-
   const isQuestionPhase = roomState.phase === 'QUESTION' && Boolean(q);
 
   return (
@@ -651,7 +700,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           <LeaderboardStage
             players={roomState.players}
             totalQuestions={roomState.currentQuestionIndex + 1}
-            highlightPlayerId={playerId ?? undefined}
+            highlightPlayerId={user?.uid}
             darkSurface={true}
           />
         </main>
@@ -697,7 +746,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           <LeaderboardStage
             players={roomState.players}
             totalQuestions={roomState.totalQuestions}
-            highlightPlayerId={playerId ?? undefined}
+            highlightPlayerId={user?.uid}
             isFinal={true}
             darkSurface={true}
           />

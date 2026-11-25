@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
   ArrowLeft,
@@ -9,9 +9,12 @@ import {
   Download,
   FileSpreadsheet,
   Image as ImageIcon,
+  LogIn,
+  LogOut,
   Play,
   Plus,
   RotateCcw,
+  Save,
   Trash2,
   Trophy,
   Upload,
@@ -20,6 +23,21 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { useFirebase } from '../firebase/FirebaseProvider';
+import {
+  createFirebaseRoom,
+  FirestoreAnswerDoc,
+  FirestorePlayerDoc,
+  FirestoreRoomDoc,
+  hostRevealCurrentQuestion,
+  hostStartOrAdvanceQuestion,
+  hostTransitionPhase,
+  loadSavedDefaultQuiz,
+  roomDocToPublicState,
+  saveDefaultQuizForUser,
+  subscribeHostRoom,
+  syncHostRoomStats,
+} from '../firebase/firebaseQuizService';
 import { DEFAULT_QUIZ, SAMPLE_CSV_TEMPLATE } from '../shared/defaultQuiz';
 import {
   exportQuizToCsv,
@@ -31,11 +49,8 @@ import {
   MAX_PLAYERS_PER_ROOM,
   QuizQuestion,
   QuizSet,
-  RoomPublicState,
-  ServerMessage,
 } from '../shared/types';
 import { soundFx } from '../utils/soundFx';
-import { useQuizSocket } from '../utils/useQuizSocket';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { CountdownClock } from './CountdownClock';
 import { CuteAvatar } from './CuteAvatar';
@@ -69,82 +84,168 @@ function downloadTextFile(filename: string, content: string, mime = 'text/csv;ch
 }
 
 export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
+  const { user, authReady, signingIn, authError, signInWithGoogle, signOutUser, clearAuthError } =
+    useFirebase();
+
   const [quiz, setQuiz] = useState<QuizSet>(() => ({
     ...DEFAULT_QUIZ,
-    questions: DEFAULT_QUIZ.questions.map((q) => ({ ...q, options: [...q.options] as [string, string, string, string] })),
+    questions: DEFAULT_QUIZ.questions.map((q) => ({
+      ...q,
+      options: [...q.options] as [string, string, string, string],
+    })),
   }));
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [csvNotice, setCsvNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState<'image' | 'video' | null>(null);
+  const [savingQuiz, setSavingQuiz] = useState(false);
 
-  const [roomState, setRoomState] = useState<RoomPublicState | null>(null);
-  const [hostToken, setHostToken] = useState<string | null>(null);
+  const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
+  const [activeQuiz, setActiveQuiz] = useState<QuizSet | null>(null);
+  const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
+  const [playersDocs, setPlayersDocs] = useState<FirestorePlayerDoc[]>([]);
+  const [answersDocs, setAnswersDocs] = useState<FirestoreAnswerDoc[]>([]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [wsError, setWsError] = useState<string | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
   const [launchingRoom, setLaunchingRoom] = useState(false);
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const lastSoundSecRef = useRef<number | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
+  const loadedSavedForUidRef = useRef<string | null>(null);
+  const revealingQuestionRef = useRef<number | null>(null);
 
-  const handleServerMsg = (msg: ServerMessage) => {
-    if (msg.type === 'error') {
-      setLaunchingRoom(false);
-      setWsError(msg.message);
-      return;
-    }
-    setWsError(null);
-
-    if (msg.type === 'host:created') {
-      setLaunchingRoom(false);
-      setHostToken(msg.hostToken);
-      setRoomState(msg.state);
-      return;
-    }
-
-    if (msg.type === 'room:state') {
-      setRoomState(msg.state);
-      return;
-    }
-
-    if (msg.type === 'room:progress') {
-      setRoomState((prev) =>
-        prev
-          ? {
-              ...prev,
-              answeredCount: msg.answeredCount,
-              totalPlayers: msg.totalPlayers,
-              answerCounts: msg.answerCounts,
-              remainingSec: msg.remainingSec,
-            }
-          : prev
-      );
-      return;
-    }
-
-    if (msg.type === 'room:tick') {
-      setRoomState((prev) =>
-        prev
-          ? {
-              ...prev,
-              remainingSec: msg.remainingSec,
-            }
-          : prev
-      );
-    }
-  };
-
-  const { connected, send } = useQuizSocket(handleServerMsg);
-
-  // Reconnect host session automatically if socket dropped while room was open
+  // Load Moderator's saved quiz from Firestore once authenticated
   useEffect(() => {
-    if (connected && roomState?.code && hostToken) {
-      send({ type: 'host:reconnect', code: roomState.code, hostToken });
+    if (!authReady || !user) return;
+    if (loadedSavedForUidRef.current === user.uid) return;
+    loadedSavedForUidRef.current = user.uid;
+
+    void loadSavedDefaultQuiz(user.uid)
+      .then((saved) => {
+        if (saved && saved.questions.length > 0) {
+          setQuiz(saved);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load saved quiz:', err);
+      });
+  }, [authReady, user]);
+
+  // Subscribe to Firestore Room, Players, and Answers when room is active & user is authenticated
+  useEffect(() => {
+    if (!authReady || !user || !activeRoomCode) return;
+    const unsub = subscribeHostRoom(activeRoomCode, user.uid, {
+      onRoom: (nextRoom) => setRoomDoc(nextRoom),
+      onPlayers: (nextPlayers) => setPlayersDocs(nextPlayers),
+      onAnswers: (nextAnswers) => setAnswersDocs(nextAnswers),
+    });
+    return () => unsub();
+  }, [authReady, user, activeRoomCode]);
+
+  // Live 250ms countdown clock for QUESTION phase
+  useEffect(() => {
+    if (!roomDoc || roomDoc.phase !== 'QUESTION') return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
+
+  // Derive current RoomPublicState for UI rendering
+  const roomState = useMemo(() => {
+    if (!roomDoc) return null;
+    const base = roomDocToPublicState(roomDoc, nowMs);
+    if (playersDocs.length > 0 || roomDoc.totalPlayers === 0) {
+      return {
+        ...base,
+        totalPlayers: Math.max(base.totalPlayers, playersDocs.length),
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+    return base;
+  }, [roomDoc, nowMs, playersDocs.length]);
+
+  // Sync live players & answer counts to Firestore room doc
+  useEffect(() => {
+    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED') return;
+    const qIdx = roomDoc.currentQuestionIndex;
+    const qAnswers = answersDocs.filter((a) => a.questionIndex === qIdx);
+    const counts: [number, number, number, number] = [0, 0, 0, 0];
+    for (const a of qAnswers) {
+      if ([0, 1, 2, 3].includes(a.choice)) {
+        counts[a.choice] += 1;
+      }
+    }
+
+    const countsChanged =
+      counts[0] !== roomDoc.answerCounts[0] ||
+      counts[1] !== roomDoc.answerCounts[1] ||
+      counts[2] !== roomDoc.answerCounts[2] ||
+      counts[3] !== roomDoc.answerCounts[3];
+    const playersChanged = playersDocs.length !== roomDoc.totalPlayers;
+    const answeredChanged = qAnswers.length !== roomDoc.answeredCount;
+
+    // Also detect player profile edits in lobby
+    const namesChanged =
+      roomDoc.phase === 'LOBBY' &&
+      playersDocs.some((p) => {
+        const inBoard = roomDoc.leaderboard.find((b) => b.id === p.id);
+        return !inBoard || inBoard.name !== p.name || inBoard.avatarId !== p.avatarId;
+      });
+
+    if (!countsChanged && !playersChanged && !answeredChanged && !namesChanged) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void syncHostRoomStats({
+        code: activeRoomCode,
+        players: playersDocs,
+        answeredCount: roomDoc.phase === 'QUESTION' ? qAnswers.length : roomDoc.answeredCount,
+        answerCounts: roomDoc.phase === 'QUESTION' ? counts : roomDoc.answerCounts,
+      }).catch((err) => {
+        console.error('Failed to sync room stats:', err);
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [activeRoomCode, roomDoc, playersDocs, answersDocs]);
+
+  // Auto-reveal when countdown reaches 0 OR all players answered
+  useEffect(() => {
+    if (!activeRoomCode || !activeQuiz || !roomDoc || roomDoc.phase !== 'QUESTION') {
+      revealingQuestionRef.current = null;
+      return;
+    }
+
+    const qIdx = roomDoc.currentQuestionIndex;
+    if (revealingQuestionRef.current === qIdx) return;
+
+    const qAnswers = answersDocs.filter((a) => a.questionIndex === qIdx);
+    const uniquePlayersAnswered = new Set(qAnswers.map((a) => a.playerUid)).size;
+    const allAnswered = playersDocs.length > 0 && uniquePlayersAnswered >= playersDocs.length;
+    const expired = Boolean(roomDoc.questionEndsAt && nowMs >= roomDoc.questionEndsAt);
+
+    if (allAnswered || expired) {
+      revealingQuestionRef.current = qIdx;
+      void hostRevealCurrentQuestion({
+        code: activeRoomCode,
+        quiz: activeQuiz,
+        questionIndex: qIdx,
+        questionEndsAt: roomDoc.questionEndsAt,
+        players: playersDocs,
+        answers: answersDocs,
+        targetPhase: 'REVEAL',
+      }).catch((err) => {
+        revealingQuestionRef.current = null;
+        console.error('Auto-reveal failed:', err);
+      });
+    }
+  }, [activeRoomCode, activeQuiz, roomDoc, playersDocs, answersDocs, nowMs]);
 
   // Generate QR code whenever room code changes
   useEffect(() => {
@@ -299,9 +400,36 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     }
   };
 
-  const handleLaunchRoom = () => {
+  const handleSaveQuiz = async () => {
+    clearAuthError();
+    let authedUser = user;
+    if (!authedUser) {
+      authedUser = await signInWithGoogle();
+    }
+    if (!authedUser) return;
+
+    setSavingQuiz(true);
+    try {
+      await saveDefaultQuizForUser(authedUser.uid, quiz);
+      setCsvNotice({
+        type: 'ok',
+        text: 'บันทึกชุดคำถามลงฐานข้อมูล Firebase เรียบร้อยแล้ว',
+      });
+    } catch (err) {
+      setCsvNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'ไม่สามารถบันทึกชุดคำถามได้',
+      });
+    } finally {
+      setSavingQuiz(false);
+    }
+  };
+
+  const handleLaunchRoom = async (quizOverride?: QuizSet) => {
     soundFx.unlock();
-    const invalidIdx = quiz.questions.findIndex(
+    clearAuthError();
+    const quizToLaunch = quizOverride ?? quiz;
+    const invalidIdx = quizToLaunch.questions.findIndex(
       (q) => !q.text.trim() || q.options.some((o) => !o.trim())
     );
     if (invalidIdx !== -1) {
@@ -312,10 +440,36 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       });
       return;
     }
+
     setCsvNotice(null);
-    setWsError(null);
+    setRoomError(null);
     setLaunchingRoom(true);
-    send({ type: 'host:create', quiz });
+
+    try {
+      let authedUser = user;
+      if (!authedUser) {
+        authedUser = await signInWithGoogle();
+      }
+      if (!authedUser) {
+        setLaunchingRoom(false);
+        return;
+      }
+
+      const { code, quiz: cleanQuiz } = await createFirebaseRoom(authedUser.uid, quizToLaunch);
+      void saveDefaultQuizForUser(authedUser.uid, cleanQuiz).catch(() => undefined);
+
+      setPlayersDocs([]);
+      setAnswersDocs([]);
+      setRoomDoc(null);
+      setActiveQuiz(cleanQuiz);
+      setActiveRoomCode(code);
+    } catch (err) {
+      setRoomError(
+        err instanceof Error ? err.message : 'ไม่สามารถสร้างห้องแข่งขันบน Firebase ได้'
+      );
+    } finally {
+      setLaunchingRoom(false);
+    }
   };
 
   const copyJoinLink = async () => {
@@ -333,7 +487,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   // =========================================================================
   // LIVE HOST STAGE (LOBBY / QUESTION / REVEAL / LEADERBOARD / ENDED)
   // =========================================================================
-  if (roomState) {
+  if (activeRoomCode && roomState && activeQuiz) {
     const joinUrl = `${window.location.origin}/?join=${roomState.code}`;
     const q = roomState.currentQuestion;
     const totalVotes = roomState.answerCounts.reduce((acc, v) => acc + v, 0);
@@ -346,8 +500,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             <button
               type="button"
               onClick={() => {
-                setRoomState(null);
-                setHostToken(null);
+                setActiveRoomCode(null);
+                setRoomDoc(null);
+                setActiveQuiz(null);
+                setPlayersDocs([]);
+                setAnswersDocs([]);
               }}
               className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
             >
@@ -381,9 +538,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
           </div>
         </header>
 
-        {wsError && (
+        {roomError && (
           <div className="mx-auto mt-4 max-w-2xl rounded-xl bg-red-950 border border-red-500 px-4 py-3 text-sm text-red-200">
-            {wsError}
+            {roomError}
           </div>
         )}
 
@@ -434,7 +591,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     data-testid="host-start-game"
                     onClick={() => {
                       soundFx.unlock();
-                      send({ type: 'host:start' });
+                      void hostStartOrAdvanceQuestion({
+                        code: activeRoomCode,
+                        quiz: activeQuiz,
+                        questionIndex: 0,
+                        players: playersDocs,
+                      });
                     }}
                     className="min-h-[44px] rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-colors"
                   >
@@ -590,7 +752,27 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => send({ type: 'host:end' })}
+                onClick={() => {
+                  if (roomState.phase === 'QUESTION') {
+                    void hostRevealCurrentQuestion({
+                      code: activeRoomCode,
+                      quiz: activeQuiz,
+                      questionIndex: roomState.currentQuestionIndex,
+                      questionEndsAt: roomState.questionEndsAt,
+                      players: playersDocs,
+                      answers: answersDocs,
+                      targetPhase: 'ENDED',
+                    });
+                  } else {
+                    void hostTransitionPhase({
+                      code: activeRoomCode,
+                      phase: 'ENDED',
+                      quiz: activeQuiz,
+                      currentQuestionIndex: roomState.currentQuestionIndex,
+                      players: playersDocs,
+                    });
+                  }
+                }}
                 className="min-h-[44px] px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold"
               >
                 จบเกมและสรุปผล
@@ -600,7 +782,18 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <button
                   type="button"
                   data-testid="host-reveal-btn"
-                  onClick={() => send({ type: 'host:reveal' })}
+                  onClick={() => {
+                    revealingQuestionRef.current = roomState.currentQuestionIndex;
+                    void hostRevealCurrentQuestion({
+                      code: activeRoomCode,
+                      quiz: activeQuiz,
+                      questionIndex: roomState.currentQuestionIndex,
+                      questionEndsAt: roomState.questionEndsAt,
+                      players: playersDocs,
+                      answers: answersDocs,
+                      targetPhase: 'REVEAL',
+                    });
+                  }}
                   className="min-h-[44px] px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center gap-2"
                 >
                   <span>เฉลยคำตอบทันที</span>
@@ -610,7 +803,19 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <button
                   type="button"
                   data-testid="host-leaderboard-btn"
-                  onClick={() => send({ type: 'host:leaderboard' })}
+                  onClick={() => {
+                    const nextPhase =
+                      roomState.currentQuestionIndex >= roomState.totalQuestions - 1
+                        ? 'ENDED'
+                        : 'LEADERBOARD';
+                    void hostTransitionPhase({
+                      code: activeRoomCode,
+                      phase: nextPhase,
+                      quiz: activeQuiz,
+                      currentQuestionIndex: roomState.currentQuestionIndex,
+                      players: playersDocs,
+                    });
+                  }}
                   className="min-h-[44px] px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center gap-2"
                 >
                   <Trophy className="w-4 h-4" />
@@ -634,14 +839,22 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   อันดับคะแนนหลังจบข้อที่ {roomState.currentQuestionIndex + 1}
                 </h2>
                 <p className="text-sm text-slate-400">
-                  ถ่ายทอดสดไปยังหน้าจอผู้เล่นทุกคนแบบเรียลไทม์
+                  ถ่ายทอดสดไปยังหน้าจอผู้เล่นทุกคนแบบเรียลไทม์ผ่าน Firebase
                 </p>
               </div>
               <div className="flex items-center gap-2.5 shrink-0">
                 <button
                   type="button"
                   data-testid="host-end-game-btn"
-                  onClick={() => send({ type: 'host:end' })}
+                  onClick={() =>
+                    void hostTransitionPhase({
+                      code: activeRoomCode,
+                      phase: 'ENDED',
+                      quiz: activeQuiz,
+                      currentQuestionIndex: roomState.currentQuestionIndex,
+                      players: playersDocs,
+                    })
+                  }
                   className="min-h-[44px] px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm"
                 >
                   จบเกมและสรุปผล
@@ -649,7 +862,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <button
                   type="button"
                   data-testid="host-next-question-btn"
-                  onClick={() => send({ type: 'host:next' })}
+                  onClick={() =>
+                    void hostStartOrAdvanceQuestion({
+                      code: activeRoomCode,
+                      quiz: activeQuiz,
+                      questionIndex: roomState.currentQuestionIndex + 1,
+                      players: playersDocs,
+                    })
+                  }
                   className="min-h-[44px] px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm inline-flex items-center gap-2 shrink-0"
                 >
                   <span>ข้อถัดไป</span>
@@ -696,11 +916,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => send({ type: 'host:restart', quiz })}
+                  onClick={() => void handleLaunchRoom(activeQuiz)}
                   className="min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center gap-2"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>เล่นรอบใหม่อีกครั้ง</span>
+                  <span>เปิดห้องรอบใหม่</span>
                 </button>
               </div>
             </div>
@@ -737,12 +957,39 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               จัดการชุดคำถามสำหรับ Moderator
             </h1>
             <p className="text-xs text-slate-500">
-              สร้างคำถาม เพิ่มรูปภาพ/วิดีโอ หรืออัปโหลดไฟล์ CSV ได้ทันที (รองรับสูงสุด 200 คน/ห้อง)
+              เชื่อมต่อ Firebase เรียลไทม์ · สร้างคำถาม เพิ่มรูปภาพ/วิดีโอ หรืออัปโหลดไฟล์ CSV ได้ทันที (สูงสุด 200 คน/ห้อง)
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {authReady && !user && (
+            <button
+              type="button"
+              onClick={() => void signInWithGoogle()}
+              disabled={signingIn}
+              className="min-h-[42px] px-3.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-bold inline-flex items-center gap-2 whitespace-nowrap"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>{signingIn ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ Google'}</span>
+            </button>
+          )}
+          {user && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+              <span className="truncate max-w-[140px]">
+                {user.displayName || user.email}
+              </span>
+              <button
+                type="button"
+                onClick={() => void signOutUser()}
+                title="ออกจากระบบ"
+                className="text-slate-500 hover:text-rose-600"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <input
             ref={csvInputRef}
             type="file"
@@ -777,9 +1024,18 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
           </button>
           <button
             type="button"
+            onClick={() => void handleSaveQuiz()}
+            disabled={savingQuiz}
+            className="min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap"
+          >
+            <Save className="w-4 h-4 text-indigo-600" />
+            <span>{savingQuiz ? 'กำลังบันทึก...' : 'บันทึกคำถาม'}</span>
+          </button>
+          <button
+            type="button"
             data-testid="host-launch-room"
-            onClick={handleLaunchRoom}
-            disabled={launchingRoom}
+            onClick={() => void handleLaunchRoom()}
+            disabled={launchingRoom || signingIn}
             className="min-h-[42px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold inline-flex items-center gap-2 shadow-sm whitespace-nowrap"
           >
             <Play className="w-4 h-4 fill-current" />
@@ -789,12 +1045,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
-        {wsError && (
+        {(roomError || authError) && (
           <div
             role="alert"
             className="rounded-xl px-4 py-3 text-sm font-medium border bg-red-50 border-red-200 text-red-800"
           >
-            {wsError}
+            {roomError || authError}
           </div>
         )}
         {csvNotice && (
@@ -819,6 +1075,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             <input
               id="quiz-title"
               type="text"
+              maxLength={120}
               value={quiz.title}
               onChange={(e) => setQuiz((prev) => ({ ...prev, title: e.target.value }))}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -832,6 +1089,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             <input
               id="quiz-desc"
               type="text"
+              maxLength={300}
               value={quiz.description}
               onChange={(e) => setQuiz((prev) => ({ ...prev, description: e.target.value }))}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -931,6 +1189,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <textarea
                   id="q-text"
                   rows={2}
+                  maxLength={500}
                   value={activeQuestion.text}
                   onChange={(e) => updateQuestion({ text: e.target.value })}
                   placeholder="พิมพ์คำถามความรู้ทั่วไปที่นี่..."
@@ -1054,6 +1313,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
                         <input
                           type="text"
+                          maxLength={200}
                           value={activeQuestion.options[optIdx]}
                           onChange={(e) => updateOption(optIdx, e.target.value)}
                           aria-label={`ตัวเลือก ${style.letter}`}

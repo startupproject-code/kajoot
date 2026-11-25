@@ -2,12 +2,24 @@ import { useEffect, useState } from 'react';
 import { MonitorPlay, QrCode, Smartphone, Users } from 'lucide-react';
 import { AVATARS, MAX_PLAYERS_PER_ROOM } from './shared/types';
 import { CuteAvatar } from './components/CuteAvatar';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ModeratorView } from './components/ModeratorView';
 import { PlayerView } from './components/PlayerView';
+import { FirebaseProvider } from './firebase/FirebaseProvider';
 
 type AppMode = 'HOME' | 'MODERATOR' | 'PLAYER';
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <FirebaseProvider>
+        <AppContent />
+      </FirebaseProvider>
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   const [mode, setMode] = useState<AppMode>('HOME');
   const [joinCodeFromUrl, setJoinCodeFromUrl] = useState('');
 
@@ -102,7 +114,7 @@ export default function App() {
               สร้างชุดคำถามผ่านหน้าเว็บหรืออัปโหลดไฟล์ CSV ใส่รูปภาพและวิดีโอประกอบได้เต็มที่ พร้อมจับเวลาถอยหลังสุดตื่นเต้นและตารางจัดอันดับถ่ายทอดสดบนหน้าจอผู้เล่นทุกคน
             </p>
             <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-500 font-medium">
-              <span>เชื่อมต่อ WebSocket เรียลไทม์</span>
+              <span>เชื่อมต่อ Firebase เรียลไทม์</span>
               <span aria-hidden="true">·</span>
               <span>สแกน QR Code หรือรหัส 4 หลัก</span>
               <span aria-hidden="true">·</span>
@@ -192,7 +204,7 @@ export default function App() {
             <Users className="w-5 h-5 text-indigo-600" />
             <h3 className="font-bold text-slate-900">รองรับสูงสุด {MAX_PLAYERS_PER_ROOM} คนต่อห้อง</h3>
             <p className="text-sm text-slate-600">
-              ประมวลผลคะแนนผ่าน WebSocket จากฝั่งเซิร์ฟเวอร์โดยตรง แม่นยำ รวดเร็ว และจัดอันดับสดพร้อมกันทุกเครื่อง
+              ซิงค์ข้อมูลและประมวลผลคะแนนผ่าน Firebase Firestore แบบเรียลไทม์ จัดอันดับสดพร้อมกันทุกเครื่อง
             </p>
           </div>
           <div className="rounded-2xl bg-white border border-slate-200 p-5 space-y-2">

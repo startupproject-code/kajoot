@@ -1,0 +1,362 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private authenticated user profile storing PII isolated from public room state.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Firebase Auth UID of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "User display name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160,
+          "description": "Verified user email address (PII)."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Optional profile avatar URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": ["uid", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "SavedQuiz": {
+      "title": "SavedQuiz",
+      "description": "Moderator quiz set persisted under the owner's private collection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "questions": {
+          "type": "array",
+          "description": "Bounded array of up to 100 quiz questions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "ownerUid", "title", "description", "questions", "createdAt", "updatedAt"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Public live quiz room state without PII, identified by a 4-digit room code.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "hostUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "quizTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "phase": {
+          "type": "string",
+          "enum": ["LOBBY", "QUESTION", "REVEAL", "LEADERBOARD", "ENDED"]
+        },
+        "currentQuestionIndex": {
+          "type": "integer"
+        },
+        "totalQuestions": {
+          "type": "integer"
+        },
+        "currentQuestion": {
+          "type": "object",
+          "description": "Active question public view (correctIndex omitted during QUESTION phase)."
+        },
+        "questionStartedAt": {
+          "type": "number"
+        },
+        "questionEndsAt": {
+          "type": "number"
+        },
+        "answeredCount": {
+          "type": "integer"
+        },
+        "totalPlayers": {
+          "type": "integer"
+        },
+        "maxPlayers": {
+          "type": "integer"
+        },
+        "answerCounts": {
+          "type": "array",
+          "description": "4-element vote tally [A, B, C, D]."
+        },
+        "leaderboard": {
+          "type": "array",
+          "description": "Ranked player public summaries (max 200 entries, zero PII)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "hostUid",
+        "quizTitle",
+        "phase",
+        "currentQuestionIndex",
+        "totalQuestions",
+        "answeredCount",
+        "totalPlayers",
+        "maxPlayers",
+        "answerCounts",
+        "leaderboard",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RoomHostData": {
+      "title": "RoomHostData",
+      "description": "Host-only private question bank with answer keys for an active room.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "hostUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "quiz": {
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["roomCode", "hostUid", "quiz", "createdAt", "updatedAt"]
+    },
+    "RoomPlayer": {
+      "title": "RoomPlayer",
+      "description": "Player participant document inside a quiz room (up to 200 players).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "roomCode": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "hostUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "avatarId": {
+          "type": "string",
+          "enum": [
+            "cat",
+            "chicken",
+            "cow",
+            "deer",
+            "dog",
+            "crocodile",
+            "elephant",
+            "fox",
+            "giraffe",
+            "hippo",
+            "panda",
+            "penguin",
+            "pig",
+            "polar",
+            "otter",
+            "frog",
+            "lion",
+            "snake",
+            "tiger"
+          ],
+          "maxLength": 20
+        },
+        "score": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "bestStreak": { "type": "integer" },
+        "correctCount": { "type": "integer" },
+        "answeredCount": { "type": "integer" },
+        "lastPoints": { "type": "integer" },
+        "lastCorrect": { "type": "boolean" },
+        "lastChoice": { "type": "integer" },
+        "rank": { "type": "integer" },
+        "connected": { "type": "boolean" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "uid",
+        "roomCode",
+        "hostUid",
+        "name",
+        "avatarId",
+        "score",
+        "streak",
+        "bestStreak",
+        "correctCount",
+        "answeredCount",
+        "lastPoints",
+        "rank",
+        "connected",
+        "joinedAt",
+        "updatedAt"
+      ]
+    },
+    "RoomAnswer": {
+      "title": "RoomAnswer",
+      "description": "Immutable player answer submission for a specific question in a room.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "roomCode": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "hostUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "playerUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "questionIndex": { "type": "integer" },
+        "choice": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "roomCode",
+        "hostUid",
+        "playerUid",
+        "questionIndex",
+        "choice",
+        "submittedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile isolated to the authenticated owner."
+    },
+    "/users/{userId}/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/SavedQuiz" },
+      "description": "Moderator's saved quiz sets."
+    },
+    "/rooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Live quiz room public state indexed by 4-digit room code."
+    },
+    "/rooms/{roomCode}/hostData/{docId}": {
+      "schema": { "$ref": "#/entities/RoomHostData" },
+      "description": "Host-only quiz question bank and answer keys for the room."
+    },
+    "/rooms/{roomCode}/players/{playerId}": {
+      "schema": { "$ref": "#/entities/RoomPlayer" },
+      "description": "Players participating in a room (up to 200 players)."
+    },
+    "/rooms/{roomCode}/answers/{answerId}": {
+      "schema": { "$ref": "#/entities/RoomAnswer" },
+      "description": "Immutable answer submissions per question per player."
+    }
+  }
+}
