@@ -68,6 +68,11 @@
           "type": "string",
           "maxLength": 300
         },
+        "coverImageUrl": {
+          "type": "string",
+          "maxLength": 700000,
+          "description": "Optional quiz set cover image URL or compressed Base64 Data URL."
+        },
         "questions": {
           "type": "array",
           "description": "Bounded array of up to 100 quiz questions."

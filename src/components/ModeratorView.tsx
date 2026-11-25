@@ -157,7 +157,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [csvNotice, setCsvNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [uploadingMedia, setUploadingMedia] = useState<'image' | 'video' | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState<'image' | 'video' | 'cover' | null>(null);
   const [savingQuiz, setSavingQuiz] = useState(false);
 
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
@@ -491,14 +491,22 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   };
 
   const handleMediaFileUpload = async (
-    kind: 'image' | 'video',
+    kind: 'image' | 'video' | 'cover',
     file?: File
   ) => {
     if (!file) return;
     setUploadingMedia(kind);
     setCsvNotice(null);
     try {
-      if (kind === 'image') {
+      if (kind === 'cover') {
+        const compressed = await compressImageFileToDataUrl(file);
+        setActiveQuiz((prev) => ({ ...prev, coverImageUrl: compressed.dataUrl }));
+        const sizeKb = Math.max(1, Math.round(compressed.approxBytes / 1024));
+        setCsvNotice({
+          type: 'ok',
+          text: `อัปโหลดรูปภาพหน้าปกเรียบร้อยแล้ว (ย่อขนาดเหลือ ${sizeKb} KB พร้อมแสดงผลและบันทึกลง Firestore)`,
+        });
+      } else if (kind === 'image') {
         const compressed = await compressImageFileToDataUrl(file);
         updateQuestion({ imageUrl: compressed.dataUrl });
         const sizeKb = Math.max(1, Math.round(compressed.approxBytes / 1024));
@@ -1230,7 +1238,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {quizSets.map((item, idx) => {
-              const coverImg = item.questions.find((q) => Boolean(q.imageUrl?.trim()))?.imageUrl;
+              const coverImg =
+                item.coverImageUrl?.trim() ||
+                item.questions.find((q) => Boolean(q.imageUrl?.trim()))?.imageUrl;
               const gradient = COVER_GRADIENTS[idx % COVER_GRADIENTS.length];
               const totalSec = item.questions.reduce((acc, q) => acc + (q.timeLimitSec || 20), 0);
               const totalMin = Math.max(1, Math.ceil(totalSec / 60));
@@ -1481,9 +1491,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
           </div>
         )}
 
-        {/* Quiz Title Card */}
-        <section className="rounded-2xl bg-white border border-slate-200 p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+        {/* Quiz Title, Description & Cover Image Card */}
+        <section className="rounded-2xl bg-white border border-slate-200 p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="lg:col-span-4">
             <label htmlFor="quiz-title" className="block text-xs font-bold text-slate-600 mb-1.5">
               ชื่อชุดคำถาม
             </label>
@@ -1497,7 +1507,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               placeholder="เช่น ศึกชิงเจ้าความรู้ทั่วไป"
             />
           </div>
-          <div>
+          <div className="lg:col-span-4">
             <label htmlFor="quiz-desc" className="block text-xs font-bold text-slate-600 mb-1.5">
               คำอธิบายสั้นๆ
             </label>
@@ -1510,6 +1520,56 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="รายละเอียดเพิ่มเติมสำหรับชุดคำถาม"
             />
+          </div>
+          <div className="lg:col-span-4">
+            <span className="block text-xs font-bold text-slate-600 mb-1.5">
+              ภาพหน้าปกชุดคำถาม (ไม่เกิน 500KB)
+            </span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-20 h-[42px] rounded-xl overflow-hidden border border-slate-200 bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 flex items-center justify-center shrink-0">
+                {quiz.coverImageUrl?.trim() ? (
+                  <img
+                    src={quiz.coverImageUrl}
+                    alt="ภาพหน้าปกชุดคำถาม"
+                    data-testid="quiz-cover-preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <BookOpen className="w-4 h-4 text-white/85" />
+                )}
+              </div>
+              <label className="flex-1 min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                <ImageIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="truncate">
+                  {uploadingMedia === 'cover'
+                    ? 'กำลังย่อรูป...'
+                    : quiz.coverImageUrl?.trim()
+                    ? 'เปลี่ยนรูปหน้าปก'
+                    : 'อัปโหลดรูปหน้าปก'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  data-testid="upload-cover-input"
+                  className="hidden"
+                  onChange={(e) => {
+                    void handleMediaFileUpload('cover', e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {quiz.coverImageUrl?.trim() && (
+                <button
+                  type="button"
+                  data-testid="remove-cover-btn"
+                  onClick={() => setActiveQuiz((prev) => ({ ...prev, coverImageUrl: '' }))}
+                  aria-label="ลบภาพหน้าปกชุดคำถาม"
+                  className="min-h-[42px] px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold whitespace-nowrap shrink-0"
+                >
+                  ลบรูป
+                </button>
+              )}
+            </div>
           </div>
         </section>
 

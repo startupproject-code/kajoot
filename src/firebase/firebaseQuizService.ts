@@ -158,12 +158,14 @@ export async function loadSavedDefaultQuiz(uid: string): Promise<QuizSet | null>
       id: string;
       title: string;
       description: string;
+      coverImageUrl?: string;
       questions: QuizSet['questions'];
     };
     return sanitizeQuizForFirebase({
       id: data.id,
       title: data.title,
       description: data.description || '',
+      ...(data.coverImageUrl ? { coverImageUrl: data.coverImageUrl } : {}),
       questions: data.questions || [],
     });
   } catch (error) {
@@ -184,6 +186,7 @@ export async function saveDefaultQuizForUser(uid: string, quiz: QuizSet): Promis
         ownerUid: uid,
         title: clean.title,
         description: clean.description,
+        coverImageUrl: clean.coverImageUrl ?? '',
         questions: clean.questions,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -192,6 +195,7 @@ export async function saveDefaultQuizForUser(uid: string, quiz: QuizSet): Promis
       await updateDoc(ref, {
         title: clean.title,
         description: clean.description,
+        coverImageUrl: clean.coverImageUrl ?? '',
         questions: clean.questions,
         updatedAt: serverTimestamp(),
       });
@@ -212,12 +216,14 @@ export async function loadAllSavedQuizzes(uid: string): Promise<QuizSet[]> {
           id: string;
           title: string;
           description?: string;
+          coverImageUrl?: string;
           questions?: QuizSet['questions'];
         };
         return sanitizeQuizForFirebase({
           id: data.id || d.id,
           title: data.title || 'ชุดคำถามใหม่',
           description: data.description || '',
+          ...(data.coverImageUrl ? { coverImageUrl: data.coverImageUrl } : {}),
           questions: data.questions || [],
         });
       })
@@ -241,6 +247,7 @@ export async function saveQuizForUser(uid: string, quiz: QuizSet): Promise<QuizS
         ownerUid: uid,
         title: clean.title,
         description: clean.description,
+        coverImageUrl: clean.coverImageUrl ?? '',
         questions: clean.questions,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -249,6 +256,7 @@ export async function saveQuizForUser(uid: string, quiz: QuizSet): Promise<QuizS
       await updateDoc(ref, {
         title: clean.title,
         description: clean.description,
+        coverImageUrl: clean.coverImageUrl ?? '',
         questions: clean.questions,
         updatedAt: serverTimestamp(),
       });

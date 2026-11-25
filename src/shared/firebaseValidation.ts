@@ -47,10 +47,17 @@ export function sanitizeQuizForFirebase(quiz: QuizSet): QuizSet {
       };
     });
 
+  const rawCover = quiz.coverImageUrl?.trim();
+  const coverImageUrl =
+    rawCover && rawCover.length <= MAX_IMAGE_DATA_URL_LEN
+      ? rawCover
+      : rawCover?.slice(0, MAX_IMAGE_DATA_URL_LEN);
+
   return {
     id: isValidFirebaseId(quiz.id) ? quiz.id : `quiz_${Date.now().toString(36)}`,
     title: (quiz.title || 'เกมตอบคำถามความรู้ทั่วไป').trim().slice(0, MAX_QUIZ_TITLE_LEN) || 'เกมตอบคำถามความรู้ทั่วไป',
     description: (quiz.description || '').trim().slice(0, MAX_QUIZ_DESC_LEN),
+    ...(coverImageUrl ? { coverImageUrl } : {}),
     questions: cleanQuestions,
   };
 }

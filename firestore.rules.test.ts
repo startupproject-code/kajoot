@@ -228,6 +228,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
       id: 'quiz_1',
       title: 'Test Quiz',
       description: '',
+      coverImageUrl: sampleDataUrl,
       questions: [
         {
           id: 'q_1',
@@ -239,10 +240,12 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         },
       ],
     });
+    assert.equal(sanitized.coverImageUrl?.length, sampleDataUrl.length);
     assert.equal(sanitized.questions[0].imageUrl?.length, sampleDataUrl.length);
 
     const publicQ = buildPublicQuestionPayload(sanitized.questions[0], 'QUESTION');
     assert.equal(publicQ.imageUrl?.length, sampleDataUrl.length);
     assert.match(rulesText, /q\.imageUrl\.size\(\) <= 700000/);
+    assert.match(rulesText, /data\.coverImageUrl\.size\(\) <= 700000/);
   });
 });

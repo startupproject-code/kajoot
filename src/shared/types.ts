@@ -67,6 +67,7 @@ export interface QuizSet {
   id: string;
   title: string;
   description: string;
+  coverImageUrl?: string;
   questions: QuizQuestion[];
 }
 

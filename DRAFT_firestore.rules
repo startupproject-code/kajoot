@@ -71,11 +71,12 @@ service cloud.firestore {
 
     function isValidSavedQuiz(data, userId, quizId) {
       return data.keys().hasAll(['id', 'ownerUid', 'title', 'description', 'questions', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['id', 'ownerUid', 'title', 'description', 'questions', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerUid', 'title', 'description', 'coverImageUrl', 'questions', 'createdAt', 'updatedAt'])
         && data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id == quizId
         && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 && data.ownerUid == userId && data.ownerUid == request.auth.uid
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
         && data.description is string && data.description.size() <= 300
+        && (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 700000))
         && data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 100
         && data.questions[0] is map
         && data.createdAt is timestamp
@@ -239,7 +240,7 @@ service cloud.firestore {
           && incoming().ownerUid == existing().ownerUid
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
-          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'questions', 'updatedAt']);
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'coverImageUrl', 'questions', 'updatedAt']);
         allow delete: if isValidId(userId) && isValidId(quizId) && isOwner(userId);
       }
     }
