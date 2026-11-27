@@ -22,6 +22,12 @@ const firebaseConfig =
 
 const app = initializeApp(firebaseConfig);
 
+export const firebaseRuntimeConfig = {
+  projectId: firebaseConfig.projectId,
+  apiKey: firebaseConfig.apiKey,
+  databaseId: firebaseConfig.firestoreDatabaseId || '(default)',
+};
+
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

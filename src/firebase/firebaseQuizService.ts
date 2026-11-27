@@ -17,10 +17,12 @@ import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses'
 import { calculatePoints, generateRoomCode, isValidRoomCode, rankPlayers } from '../shared/quizLogic';
 import {
   buildPublicQuestionPayload,
+  isValidFirebaseId,
   MAX_PLAYER_NAME_LEN,
   sanitizePlayerName,
   sanitizeQuizForFirebase,
 } from '../shared/firebaseValidation';
+import { computeRemainingQuestionStats } from '../utils/playerPresenceLogic';
 import {
   AnswerIndex,
   AvatarId,
@@ -31,7 +33,7 @@ import {
   RoomPhase,
   RoomPublicState,
 } from '../shared/types';
-import { db, handleFirestoreError, OperationType } from './firebaseClient';
+import { db, firebaseRuntimeConfig, handleFirestoreError, OperationType } from './firebaseClient';
 
 const GUEST_PLAYER_STORAGE_KEY = 'quizarena_guest_player_id';
 
@@ -500,10 +502,12 @@ export async function hostRevealCurrentQuestion(params: {
   const totalMs = q.timeLimitSec * 1000;
   const endsAt = questionEndsAt ?? Date.now();
 
+  const activePlayerIds = new Set(players.map((p) => p.id));
   const answerMap = new Map<string, FirestoreAnswerDoc>();
   const answerCounts: [number, number, number, number] = [0, 0, 0, 0];
   for (const ans of answers) {
     if (ans.questionIndex !== questionIndex) continue;
+    if (!activePlayerIds.has(ans.playerUid)) continue;
     answerMap.set(ans.playerUid, ans);
     if ([0, 1, 2, 3].includes(ans.choice)) {
       answerCounts[ans.choice] += 1;
@@ -716,6 +720,58 @@ export async function hostKickFirebasePlayer(params: {
   }
 }
 
+export async function hostPruneDisconnectedPlayers(params: {
+  code: string;
+  playerIds: string[];
+  players: FirestorePlayerDoc[];
+  answers?: FirestoreAnswerDoc[];
+  currentQuestionIndex?: number;
+  phase?: RoomPhase;
+}): Promise<void> {
+  if (params.phase === 'ENDED') return;
+  const uniqueIds = Array.from(new Set(params.playerIds)).filter((id) =>
+    isValidFirebaseId(id)
+  );
+  if (uniqueIds.length === 0) return;
+
+  const removeSet = new Set(uniqueIds);
+  const remaining = params.players.filter((p) => !removeSet.has(p.id));
+  const ranked = rankPlayers(remaining);
+
+  const roomPatch: Record<string, unknown> = {
+    totalPlayers: Math.min(MAX_PLAYERS_PER_ROOM, ranked.length),
+    leaderboard: ranked.slice(0, MAX_PLAYERS_PER_ROOM),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (
+    params.phase === 'QUESTION' &&
+    params.answers &&
+    typeof params.currentQuestionIndex === 'number' &&
+    params.currentQuestionIndex >= 0
+  ) {
+    const qStats = computeRemainingQuestionStats(
+      remaining,
+      params.answers,
+      params.currentQuestionIndex
+    );
+    roomPatch.answeredCount = qStats.answeredCount;
+    roomPatch.answerCounts = qStats.answerCounts;
+  }
+
+  const batch = writeBatch(db);
+  for (const playerId of uniqueIds) {
+    batch.delete(doc(db, 'rooms', params.code, 'players', playerId));
+  }
+  batch.update(doc(db, 'rooms', params.code), roomPatch);
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `rooms/${params.code}/players`);
+  }
+}
+
 export async function joinFirebaseRoom(params: {
   code: string;
   hostUid: string;
@@ -790,6 +846,93 @@ export async function updateFirebasePlayerPose(params: {
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, playerPath);
+  }
+}
+
+export async function sendPlayerHeartbeat(params: {
+  code: string;
+  uid: string;
+}): Promise<void> {
+  if (!isValidRoomCode(params.code) || !isValidFirebaseId(params.uid)) return;
+  try {
+    await updateDoc(doc(db, 'rooms', params.code, 'players', params.uid), {
+      connected: true,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'not-found' || code === 'permission-denied') {
+      return;
+    }
+    handleFirestoreError(error, OperationType.UPDATE, `rooms/${params.code}/players/${params.uid}`);
+  }
+}
+
+export function sendPlayerDisconnectKeepalive(params: {
+  code: string;
+  uid: string;
+}): void {
+  if (!isValidRoomCode(params.code) || !isValidFirebaseId(params.uid)) return;
+  if (typeof fetch !== 'function') return;
+
+  const { projectId, apiKey, databaseId } = firebaseRuntimeConfig;
+  if (!projectId || !apiKey) return;
+
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/rooms/${params.code}/players/${params.uid}`;
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    projectId
+  )}/databases/${encodeURIComponent(databaseId)}/documents:commit?key=${encodeURIComponent(
+    apiKey
+  )}`;
+
+  void fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({
+      writes: [
+        {
+          update: {
+            name: docName,
+            fields: {
+              connected: { booleanValue: false },
+            },
+          },
+          updateMask: {
+            fieldPaths: ['connected'],
+          },
+          updateTransforms: [
+            {
+              fieldPath: 'updatedAt',
+              setToServerValue: 'REQUEST_TIME',
+            },
+          ],
+        },
+      ],
+    }),
+  }).catch(() => undefined);
+}
+
+export async function markPlayerDisconnected(params: {
+  code: string;
+  uid: string;
+  useKeepalive?: boolean;
+}): Promise<void> {
+  if (!isValidRoomCode(params.code) || !isValidFirebaseId(params.uid)) return;
+  if (params.useKeepalive) {
+    sendPlayerDisconnectKeepalive({ code: params.code, uid: params.uid });
+  }
+  try {
+    await updateDoc(doc(db, 'rooms', params.code, 'players', params.uid), {
+      connected: false,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'not-found' || code === 'permission-denied') {
+      return;
+    }
+    // Non-fatal during page unload / network loss
   }
 }
 

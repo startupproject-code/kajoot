@@ -40,6 +40,7 @@ import {
   FirestorePlayerDoc,
   FirestoreRoomDoc,
   hostKickFirebasePlayer,
+  hostPruneDisconnectedPlayers,
   hostRevealCurrentQuestion,
   hostStartOrAdvanceQuestion,
   hostTransitionPhase,
@@ -70,6 +71,12 @@ import {
   MAX_INLINE_VIDEO_BYTES,
   readFileAsDataUrl,
 } from '../utils/mediaUpload';
+import {
+  MODERATOR_PRUNE_SWEEP_INTERVAL_MS,
+  MODERATOR_SLEEP_GAP_THRESHOLD_MS,
+  PlayerPresenceTracker,
+  computeRemainingQuestionStats,
+} from '../utils/playerPresenceLogic';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { CountdownClock } from './CountdownClock';
@@ -203,6 +210,28 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const lastPhaseRef = useRef<string | null>(null);
   const loadedSavedForUidRef = useRef<string | null>(null);
   const revealingQuestionRef = useRef<number | null>(null);
+  const presenceTrackerRef = useRef<PlayerPresenceTracker>(new PlayerPresenceTracker());
+  const pruningIdsRef = useRef<Set<string>>(new Set());
+  const lastHostBatchWriteAtRef = useRef<number>(0);
+  const lastSweepTickAtRef = useRef<number>(Date.now());
+  const latestPresenceContextRef = useRef<{
+    code: string | null;
+    roomDoc: FirestoreRoomDoc | null;
+    playersDocs: FirestorePlayerDoc[];
+    answersDocs: FirestoreAnswerDoc[];
+  }>({
+    code: null,
+    roomDoc: null,
+    playersDocs: [],
+    answersDocs: [],
+  });
+
+  latestPresenceContextRef.current = {
+    code: activeRoomCode,
+    roomDoc,
+    playersDocs,
+    answersDocs,
+  };
 
   const quiz = useMemo(
     () => quizSets.find((q) => q.id === activeQuizId) ?? quizSets[0] ?? cloneDefaultQuiz(),
@@ -288,17 +317,90 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     return base;
   }, [roomDoc, nowMs, playersDocs]);
 
+  // Reset presence tracker when switching or closing room
+  useEffect(() => {
+    presenceTrackerRef.current.reset();
+    pruningIdsRef.current.clear();
+    lastSweepTickAtRef.current = Date.now();
+  }, [activeRoomCode]);
+
+  // Record observed player heartbeats & answers in Moderator presence tracker
+  useEffect(() => {
+    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED') return;
+    const isHostWriteWindow = Date.now() - lastHostBatchWriteAtRef.current < 2500;
+    presenceTrackerRef.current.syncSnapshot(playersDocs, answersDocs, Date.now(), {
+      isHostWriteWindow,
+    });
+  }, [activeRoomCode, roomDoc, playersDocs, answersDocs]);
+
+  // Periodically auto-delete disconnected, closed-app, or backgrounded players from the room
+  const isRoomActiveForPruning = Boolean(
+    authReady && user && activeRoomCode && roomDoc && roomDoc.phase !== 'ENDED'
+  );
+  useEffect(() => {
+    if (!isRoomActiveForPruning) return;
+    lastSweepTickAtRef.current = Date.now();
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const gap = now - lastSweepTickAtRef.current;
+      lastSweepTickAtRef.current = now;
+
+      if (gap > MODERATOR_SLEEP_GAP_THRESHOLD_MS) {
+        presenceTrackerRef.current.shiftForHostWakeup(gap);
+        return;
+      }
+
+      const {
+        code,
+        roomDoc: latestRoom,
+        playersDocs: latestPlayers,
+        answersDocs: latestAnswers,
+      } = latestPresenceContextRef.current;
+      if (!code || !latestRoom || latestRoom.phase === 'ENDED' || latestPlayers.length === 0) {
+        return;
+      }
+
+      const staleIds = presenceTrackerRef.current
+        .getDisconnectedPlayerIds(latestPlayers, latestRoom.phase, now)
+        .filter((id) => !pruningIdsRef.current.has(id));
+
+      if (staleIds.length === 0) return;
+
+      for (const id of staleIds) {
+        pruningIdsRef.current.add(id);
+      }
+
+      void hostPruneDisconnectedPlayers({
+        code,
+        playerIds: staleIds,
+        players: latestPlayers,
+        answers: latestAnswers,
+        currentQuestionIndex: latestRoom.currentQuestionIndex,
+        phase: latestRoom.phase,
+      })
+        .catch((err) => {
+          console.warn('Auto-prune disconnected players failed:', err);
+        })
+        .finally(() => {
+          for (const id of staleIds) {
+            pruningIdsRef.current.delete(id);
+          }
+        });
+    }, MODERATOR_PRUNE_SWEEP_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [isRoomActiveForPruning, activeRoomCode]);
+
   // Sync live players & answer counts to Firestore room doc
   useEffect(() => {
     if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED') return;
     const qIdx = roomDoc.currentQuestionIndex;
-    const qAnswers = answersDocs.filter((a) => a.questionIndex === qIdx);
-    const counts: [number, number, number, number] = [0, 0, 0, 0];
-    for (const a of qAnswers) {
-      if ([0, 1, 2, 3].includes(a.choice)) {
-        counts[a.choice] += 1;
-      }
-    }
+    const { answeredCount, answerCounts: counts } = computeRemainingQuestionStats(
+      playersDocs,
+      answersDocs,
+      qIdx
+    );
 
     const countsChanged =
       counts[0] !== roomDoc.answerCounts[0] ||
@@ -306,7 +408,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       counts[2] !== roomDoc.answerCounts[2] ||
       counts[3] !== roomDoc.answerCounts[3];
     const playersChanged = playersDocs.length !== roomDoc.totalPlayers;
-    const answeredChanged = qAnswers.length !== roomDoc.answeredCount;
+    const answeredChanged = answeredCount !== roomDoc.answeredCount;
 
     const namesChanged =
       roomDoc.phase === 'LOBBY' &&
@@ -328,7 +430,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       void syncHostRoomStats({
         code: activeRoomCode,
         players: playersDocs,
-        answeredCount: roomDoc.phase === 'QUESTION' ? qAnswers.length : roomDoc.answeredCount,
+        answeredCount: roomDoc.phase === 'QUESTION' ? answeredCount : roomDoc.answeredCount,
         answerCounts: roomDoc.phase === 'QUESTION' ? counts : roomDoc.answerCounts,
       }).catch((err) => {
         console.error('Failed to sync room stats:', err);
@@ -338,7 +440,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     return () => window.clearTimeout(timer);
   }, [activeRoomCode, roomDoc, playersDocs, answersDocs]);
 
-  // Auto-reveal when countdown reaches 0 OR all players answered
+  // Auto-reveal when countdown reaches 0 OR all active players answered
   useEffect(() => {
     if (!activeRoomCode || !activeLiveQuiz || !roomDoc || roomDoc.phase !== 'QUESTION') {
       revealingQuestionRef.current = null;
@@ -348,13 +450,17 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     const qIdx = roomDoc.currentQuestionIndex;
     if (revealingQuestionRef.current === qIdx) return;
 
-    const qAnswers = answersDocs.filter((a) => a.questionIndex === qIdx);
-    const uniquePlayersAnswered = new Set(qAnswers.map((a) => a.playerUid)).size;
+    const { answeredCount: uniquePlayersAnswered } = computeRemainingQuestionStats(
+      playersDocs,
+      answersDocs,
+      qIdx
+    );
     const allAnswered = playersDocs.length > 0 && uniquePlayersAnswered >= playersDocs.length;
     const expired = Boolean(roomDoc.questionEndsAt && nowMs >= roomDoc.questionEndsAt);
 
     if (allAnswered || expired) {
       revealingQuestionRef.current = qIdx;
+      lastHostBatchWriteAtRef.current = Date.now();
       void hostRevealCurrentQuestion({
         code: activeRoomCode,
         quiz: activeLiveQuiz,
@@ -970,6 +1076,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   data-testid="host-start-game"
                   onClick={() => {
                     soundFx.unlock();
+                    lastHostBatchWriteAtRef.current = Date.now();
                     void hostStartOrAdvanceQuestion({
                       code: activeRoomCode,
                       quiz: activeLiveQuiz,
@@ -1208,6 +1315,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 type="button"
                 onClick={() => {
                   if (roomState.phase === 'QUESTION') {
+                    lastHostBatchWriteAtRef.current = Date.now();
                     void hostRevealCurrentQuestion({
                       code: activeRoomCode,
                       quiz: activeLiveQuiz,
@@ -1238,6 +1346,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   data-testid="host-reveal-btn"
                   onClick={() => {
                     revealingQuestionRef.current = roomState.currentQuestionIndex;
+                    lastHostBatchWriteAtRef.current = Date.now();
                     void hostRevealCurrentQuestion({
                       code: activeRoomCode,
                       quiz: activeLiveQuiz,
@@ -1316,14 +1425,15 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <button
                   type="button"
                   data-testid="host-next-question-btn"
-                  onClick={() =>
+                  onClick={() => {
+                    lastHostBatchWriteAtRef.current = Date.now();
                     void hostStartOrAdvanceQuestion({
                       code: activeRoomCode,
                       quiz: activeLiveQuiz,
                       questionIndex: roomState.currentQuestionIndex + 1,
                       players: playersDocs,
-                    })
-                  }
+                    });
+                  }}
                   className="min-h-[44px] px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm inline-flex items-center gap-2 shrink-0"
                 >
                   <span>ข้อถัดไป</span>

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Flame,
   LogIn,
+  LogOut,
   Trophy,
   Users,
   Volume2,
@@ -17,7 +18,9 @@ import {
   FirestoreRoomDoc,
   getOrCreateGuestPlayerId,
   joinFirebaseRoom,
+  markPlayerDisconnected,
   roomDocToPublicState,
+  sendPlayerHeartbeat,
   subscribePlayerRoom,
   submitFirebaseAnswer,
   updateFirebasePlayerPose,
@@ -32,7 +35,13 @@ import {
   AvatarId,
   AVATARS,
   MAX_PLAYERS_PER_ROOM,
+  RoomPhase,
 } from '../shared/types';
+import {
+  PLAYER_BACKGROUND_DISCONNECT_MS,
+  PLAYER_HEARTBEAT_INTERVAL_MS,
+  PLAYER_HEARTBEAT_JITTER_MS,
+} from '../utils/playerPresenceLogic';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { AvatarPicker } from './AvatarPicker';
@@ -79,6 +88,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
   const autoCheckedRef = useRef(false);
   const hadJoinedSelfRef = useRef(false);
+  const intentionalLeaveRef = useRef(false);
+  const activeSessionRef = useRef<{ code: string; uid: string; phase?: RoomPhase } | null>(null);
+  const lastDisconnectSentAtRef = useRef(0);
   const lastPoseWriteAtRef = useRef(0);
   const poseCooldownUntilRef = useRef(0);
   const lastSoundSecRef = useRef<number | null>(null);
@@ -145,7 +157,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           setSelfPlayerDoc(null);
           setRoomDoc(null);
           setStep('ENTER_CODE');
-          setErrorMsg('คุณถูก Moderator นำออกจากห้องแข่งขัน');
+          if (!intentionalLeaveRef.current) {
+            setErrorMsg('คุณหลุดการเชื่อมต่อ ออกจากหน้าแอพ หรือถูกนำออกจากห้องแข่งขัน');
+          }
         } else {
           setSelfPlayerDoc(null);
         }
@@ -160,6 +174,104 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
     return () => unsub();
   }, [step, roomCode, guestPlayerId]);
+
+  // Keep latest session + ended state in refs without restarting heartbeat effect across phase changes
+  const isActiveRoomSession =
+    step === 'IN_ROOM' && Boolean(roomCode) && roomDoc?.phase !== 'ENDED';
+  const isRoomEndedRef = useRef(false);
+  isRoomEndedRef.current = roomDoc?.phase === 'ENDED';
+
+  // Player presence heartbeat + immediate disconnect signal on page close / app switch / unmount
+  useEffect(() => {
+    if (!isActiveRoomSession) {
+      activeSessionRef.current = null;
+      return;
+    }
+
+    activeSessionRef.current = {
+      code: roomCode,
+      uid: guestPlayerId,
+    };
+
+    const sendHeartbeatNow = () => {
+      const session = activeSessionRef.current;
+      if (!session || isRoomEndedRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      void sendPlayerHeartbeat({ code: session.code, uid: session.uid }).catch(() => undefined);
+    };
+
+    const emitDisconnectOnce = () => {
+      const session = activeSessionRef.current;
+      if (!session || isRoomEndedRef.current) return;
+      const now = Date.now();
+      if (now - lastDisconnectSentAtRef.current < 400) return;
+      lastDisconnectSentAtRef.current = now;
+      void markPlayerDisconnected({
+        code: session.code,
+        uid: session.uid,
+        useKeepalive: true,
+      });
+    };
+
+    let heartbeatTimer: number | null = null;
+    let backgroundTimer: number | null = null;
+    const jitterMs = Math.floor(Math.random() * PLAYER_HEARTBEAT_JITTER_MS);
+
+    const startTimer = window.setTimeout(() => {
+      sendHeartbeatNow();
+      heartbeatTimer = window.setInterval(() => {
+        sendHeartbeatNow();
+      }, PLAYER_HEARTBEAT_INTERVAL_MS);
+    }, jitterMs);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (backgroundTimer !== null) {
+          window.clearTimeout(backgroundTimer);
+        }
+        backgroundTimer = window.setTimeout(() => {
+          if (document.visibilityState === 'hidden') {
+            emitDisconnectOnce();
+          }
+        }, PLAYER_BACKGROUND_DISCONNECT_MS);
+      } else {
+        if (backgroundTimer !== null) {
+          window.clearTimeout(backgroundTimer);
+          backgroundTimer = null;
+        }
+        sendHeartbeatNow();
+      }
+    };
+
+    const handlePageExit = () => {
+      emitDisconnectOnce();
+    };
+
+    const handleOnline = () => {
+      sendHeartbeatNow();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageExit);
+    window.addEventListener('beforeunload', handlePageExit);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer);
+      if (backgroundTimer !== null) window.clearTimeout(backgroundTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageExit);
+      window.removeEventListener('beforeunload', handlePageExit);
+      window.removeEventListener('online', handleOnline);
+
+      if (hadJoinedSelfRef.current && !intentionalLeaveRef.current && !isRoomEndedRef.current) {
+        emitDisconnectOnce();
+      }
+      activeSessionRef.current = null;
+    };
+  }, [isActiveRoomSession, roomCode, guestPlayerId]);
 
   // Smooth 250ms countdown clock during QUESTION phase
   useEffect(() => {
@@ -244,6 +356,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     setJoiningRoom(true);
     try {
       hadJoinedSelfRef.current = false;
+      intentionalLeaveRef.current = false;
       await joinFirebaseRoom({
         code: roomCode,
         hostUid: verifiedHostUid,
@@ -317,6 +430,20 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setSelectedChoice(null);
       setErrorMsg(err instanceof Error ? err.message : 'ส่งคำตอบไม่สำเร็จ');
     });
+  };
+
+  const handleLeaveRoom = () => {
+    intentionalLeaveRef.current = true;
+    const session = activeSessionRef.current;
+    activeSessionRef.current = null;
+    if (session && session.phase !== 'ENDED') {
+      void markPlayerDisconnected({
+        code: session.code,
+        uid: session.uid,
+        useKeepalive: true,
+      });
+    }
+    onBackHome();
   };
 
   // =========================================================================
@@ -579,6 +706,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           >
             {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
+          {roomState.phase !== 'ENDED' && (
+            <button
+              type="button"
+              data-testid="player-leave-room-btn"
+              onClick={handleLeaveRoom}
+              aria-label="ออกจากห้อง"
+              title="ออกจากห้องแข่งขัน"
+              className="min-h-[40px] px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span className="hidden sm:inline">ออกจากห้อง</span>
+            </button>
+          )}
         </div>
       </header>
 
