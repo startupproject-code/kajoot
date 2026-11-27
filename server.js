@@ -8,67 +8,146 @@ import { WebSocketServer, WebSocket } from "ws";
 // src/shared/types.ts
 var MAX_PLAYERS_PER_ROOM = 200;
 var AVATARS = [
-  { id: "char_01", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/1_d7a74ebc.jpg", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
-  { id: "char_02", name: "\u0E19\u0E49\u0E2D\u0E07\u0E42\u0E1A\u0E27\u0E4C\u0E0A\u0E21\u0E1E\u0E39", imagePath: "/assets/aistudio/2_0db288ca.jpg", bgClass: "bg-sky-100", accentHex: "#EC4899" },
-  { id: "char_03", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/3_43852fcc.jpg", bgClass: "bg-orange-100", accentHex: "#F97316" },
-  { id: "char_04", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E14\u0E32\u0E27\u0E21\u0E48\u0E27\u0E07", imagePath: "/assets/aistudio/4_ea160a01.jpg", bgClass: "bg-purple-100", accentHex: "#A855F7" },
-  { id: "char_05", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E41\u0E01\u0E4A\u0E1B\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/5_4381ac4c.jpg", bgClass: "bg-emerald-100", accentHex: "#10B981" },
-  { id: "char_06", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2D\u0E35\u0E4A\u0E22\u0E21\u0E22\u0E35\u0E19\u0E2A\u0E4C", imagePath: "/assets/aistudio/6_feb3a696.jpg", bgClass: "bg-pink-100", accentHex: "#EC4899" },
-  { id: "char_07", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E21\u0E15\u0E31\u0E49\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/7_65e65de4.jpg", bgClass: "bg-blue-100", accentHex: "#3B82F6" },
-  { id: "char_08", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E42\u0E1B\u0E42\u0E25\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/8_f6576340.jpg", bgClass: "bg-cyan-100", accentHex: "#06B6D4" },
-  { id: "char_09", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E35\u0E22\u0E0A\u0E38\u0E14\u0E41\u0E14\u0E07", imagePath: "/assets/aistudio/9_0eac9d0a.jpg", bgClass: "bg-rose-100", accentHex: "#F43F5E" },
-  { id: "char_10", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E39\u0E1F\u0E31\u0E07\u0E40\u0E17\u0E48", imagePath: "/assets/aistudio/10_20cce168.jpg", bgClass: "bg-slate-200", accentHex: "#64748B" },
-  { id: "char_11", name: "\u0E19\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E21\u0E1E\u0E23\u0E21\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/11_def2bfdc.jpg", bgClass: "bg-yellow-100", accentHex: "#EAB308" },
-  { id: "char_12", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E41\u0E14\u0E07\u0E40\u0E02\u0E49\u0E21", imagePath: "/assets/aistudio/12_19d1dc9a.jpg", bgClass: "bg-sky-100", accentHex: "#E11D48" },
-  { id: "char_13", name: "\u0E19\u0E49\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E42\u0E1B\u0E23\u0E07\u0E02\u0E32\u0E27", imagePath: "/assets/aistudio/13_8c7ac19c.jpg", bgClass: "bg-pink-100", accentHex: "#EC4899" },
-  { id: "char_14", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E0A\u0E38\u0E14\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/14_7a8344ae.jpg", bgClass: "bg-emerald-100", accentHex: "#10B981" },
-  { id: "char_15", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/15_18a93aa2.jpg", bgClass: "bg-emerald-100", accentHex: "#F59E0B" },
-  { id: "char_16", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/16_42a4af2c.jpg", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
-  { id: "char_17", name: "\u0E19\u0E49\u0E2D\u0E07\u0E21\u0E31\u0E14\u0E08\u0E38\u0E01\u0E04\u0E39\u0E48", imagePath: "/assets/aistudio/17_634da5f8.jpg", bgClass: "bg-amber-100", accentHex: "#8B5CF6" },
-  { id: "char_18", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/18_e19f7f1c.jpg", bgClass: "bg-indigo-100", accentHex: "#EA580C" },
-  { id: "char_19", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E49\u0E32\u0E04\u0E32\u0E14\u0E2B\u0E31\u0E27\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/20_a8878a73.jpg", bgClass: "bg-pink-100", accentHex: "#F97316" }
+  { id: "char_01", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/1_d7a74ebc.webp", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
+  { id: "char_02", name: "\u0E19\u0E49\u0E2D\u0E07\u0E42\u0E1A\u0E27\u0E4C\u0E0A\u0E21\u0E1E\u0E39", imagePath: "/assets/aistudio/2_0db288ca.webp", bgClass: "bg-sky-100", accentHex: "#EC4899" },
+  { id: "char_03", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/3_43852fcc.webp", bgClass: "bg-orange-100", accentHex: "#F97316" },
+  { id: "char_04", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E14\u0E32\u0E27\u0E21\u0E48\u0E27\u0E07", imagePath: "/assets/aistudio/4_ea160a01.webp", bgClass: "bg-purple-100", accentHex: "#A855F7" },
+  { id: "char_05", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E41\u0E01\u0E4A\u0E1B\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/5_4381ac4c.webp", bgClass: "bg-emerald-100", accentHex: "#10B981" },
+  { id: "char_06", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2D\u0E35\u0E4A\u0E22\u0E21\u0E22\u0E35\u0E19\u0E2A\u0E4C", imagePath: "/assets/aistudio/6_feb3a696.webp", bgClass: "bg-pink-100", accentHex: "#EC4899" },
+  { id: "char_07", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E21\u0E15\u0E31\u0E49\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/7_65e65de4.webp", bgClass: "bg-blue-100", accentHex: "#3B82F6" },
+  { id: "char_08", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E42\u0E1B\u0E42\u0E25\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/8_f6576340.webp", bgClass: "bg-cyan-100", accentHex: "#06B6D4" },
+  { id: "char_09", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E35\u0E22\u0E0A\u0E38\u0E14\u0E41\u0E14\u0E07", imagePath: "/assets/aistudio/9_0eac9d0a.webp", bgClass: "bg-rose-100", accentHex: "#F43F5E" },
+  { id: "char_10", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E39\u0E1F\u0E31\u0E07\u0E40\u0E17\u0E48", imagePath: "/assets/aistudio/10_20cce168.webp", bgClass: "bg-slate-200", accentHex: "#64748B" },
+  { id: "char_11", name: "\u0E19\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E21\u0E1E\u0E23\u0E21\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/11_def2bfdc.webp", bgClass: "bg-yellow-100", accentHex: "#EAB308" },
+  { id: "char_12", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E41\u0E14\u0E07\u0E40\u0E02\u0E49\u0E21", imagePath: "/assets/aistudio/12_19d1dc9a.webp", bgClass: "bg-sky-100", accentHex: "#E11D48" },
+  { id: "char_13", name: "\u0E19\u0E49\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E42\u0E1B\u0E23\u0E07\u0E02\u0E32\u0E27", imagePath: "/assets/aistudio/13_8c7ac19c.webp", bgClass: "bg-pink-100", accentHex: "#EC4899" },
+  { id: "char_14", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E0A\u0E38\u0E14\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/14_7a8344ae.webp", bgClass: "bg-emerald-100", accentHex: "#10B981" },
+  { id: "char_15", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/15_18a93aa2.webp", bgClass: "bg-emerald-100", accentHex: "#F59E0B" },
+  { id: "char_16", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/16_42a4af2c.webp", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
+  { id: "char_17", name: "\u0E19\u0E49\u0E2D\u0E07\u0E21\u0E31\u0E14\u0E08\u0E38\u0E01\u0E04\u0E39\u0E48", imagePath: "/assets/aistudio/17_634da5f8.webp", bgClass: "bg-amber-100", accentHex: "#8B5CF6" },
+  { id: "char_18", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/18_e19f7f1c.webp", bgClass: "bg-indigo-100", accentHex: "#EA580C" },
+  { id: "char_19", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E49\u0E32\u0E04\u0E32\u0E14\u0E2B\u0E31\u0E27\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/20_a8878a73.webp", bgClass: "bg-pink-100", accentHex: "#F97316" }
 ];
 
 // src/shared/characterPoses.ts
 var DEFAULT_POSE_ID = "default";
+function buildStandardPoses(defaultFile, poseFiles) {
+  const asset = (file) => `/assets/aistudio/${file}`;
+  return [
+    { id: DEFAULT_POSE_ID, label: "\u0E17\u0E48\u0E32\u0E1B\u0E01\u0E15\u0E34", imagePath: asset(defaultFile) },
+    { id: "pose_1", label: "\u0E15\u0E32\u0E40\u0E2B\u0E25\u0E48\u0E41\u0E25\u0E1A\u0E25\u0E34\u0E49\u0E19", imagePath: asset(poseFiles[0]) },
+    { id: "pose_2", label: "\u0E17\u0E33\u0E1B\u0E32\u0E01\u0E08\u0E39\u0E4B", imagePath: asset(poseFiles[1]) },
+    { id: "pose_3", label: "\u0E42\u0E01\u0E23\u0E18\u0E01\u0E2D\u0E14\u0E2D\u0E01", imagePath: asset(poseFiles[2]) },
+    { id: "pose_4", label: "\u0E02\u0E22\u0E34\u0E1A\u0E15\u0E32\u0E08\u0E34\u0E49\u0E21\u0E41\u0E01\u0E49\u0E21", imagePath: asset(poseFiles[3]) },
+    { id: "pose_5", label: "\u0E23\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E49", imagePath: asset(poseFiles[4]) },
+    { id: "pose_6", label: "\u0E2A\u0E48\u0E07\u0E2B\u0E31\u0E27\u0E43\u0E08", imagePath: asset(poseFiles[5]) }
+  ];
+}
 var CHARACTER_POSES = {
-  char_05: [
-    {
-      id: "default",
-      label: "\u0E17\u0E48\u0E32\u0E1B\u0E01\u0E15\u0E34",
-      imagePath: "/assets/aistudio/5_4381ac4c.jpg"
-    },
-    {
-      id: "pose_1",
-      label: "\u0E15\u0E32\u0E40\u0E2B\u0E25\u0E48\u0E41\u0E25\u0E1A\u0E25\u0E34\u0E49\u0E19",
-      imagePath: "/assets/aistudio/1.________2ee20ed8.jpg"
-    },
-    {
-      id: "pose_2",
-      label: "\u0E17\u0E33\u0E1B\u0E32\u0E01\u0E08\u0E39\u0E4B",
-      imagePath: "/assets/aistudio/2.________e7d0164b.jpg"
-    },
-    {
-      id: "pose_3",
-      label: "\u0E42\u0E01\u0E23\u0E18\u0E01\u0E2D\u0E14\u0E2D\u0E01",
-      imagePath: "/assets/aistudio/3.______e9ea8d3d.jpg"
-    },
-    {
-      id: "pose_4",
-      label: "\u0E02\u0E22\u0E34\u0E1A\u0E15\u0E32\u0E08\u0E34\u0E49\u0E21\u0E41\u0E01\u0E49\u0E21",
-      imagePath: "/assets/aistudio/4.__________97506b17.jpg"
-    },
-    {
-      id: "pose_5",
-      label: "\u0E23\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E49",
-      imagePath: "/assets/aistudio/5._________8f32f908.jpg"
-    },
-    {
-      id: "pose_6",
-      label: "\u0E2A\u0E48\u0E07\u0E2B\u0E31\u0E27\u0E43\u0E08",
-      imagePath: "/assets/aistudio/6.__________3cee0536.jpg"
-    }
-  ]
+  char_01: buildStandardPoses("1_d7a74ebc.webp", [
+    "1.________96e97382.webp",
+    "2.________8a0ee786.webp",
+    "3.______d1ce5686.webp",
+    "4.__________2d660e68.webp",
+    "5._________3419ca25.webp",
+    "6.__________b500c2c1.webp"
+  ]),
+  char_02: buildStandardPoses("2_0db288ca.webp", [
+    "1.________d4b31d17.webp",
+    "2.________23368b53.webp",
+    "3.______506f922e.webp",
+    "4.__________b8990766.webp",
+    "5._________5f0f52e0.webp",
+    "6.__________bf7d8f86.webp"
+  ]),
+  char_03: buildStandardPoses("3_43852fcc.webp", [
+    "1.________d6893cfb.webp",
+    "2.________7b2f9a49.webp",
+    "3.______381dc192.webp",
+    "4.__________ddaa8a36.webp",
+    "5._________3fd78f7b.webp",
+    "6.__________cbf1f23b.webp"
+  ]),
+  char_04: buildStandardPoses("4_ea160a01.webp", [
+    "1.________49649935.webp",
+    "2.________7079b4d0.webp",
+    "3.______25386012.webp",
+    "4.__________51ecde20.webp",
+    "5._________7eefad21.webp",
+    "6.__________619e62c6.webp"
+  ]),
+  char_05: buildStandardPoses("5_4381ac4c.webp", [
+    "1.________2ee20ed8.webp",
+    "2.________e7d0164b.webp",
+    "3.______e9ea8d3d.webp",
+    "4.__________97506b17.webp",
+    "5._________8f32f908.webp",
+    "6.__________3cee0536.webp"
+  ]),
+  char_06: buildStandardPoses("6_feb3a696.webp", [
+    "1.________d02ed67b.webp",
+    "2.________548dcda4.webp",
+    "3.______b0343c61.webp",
+    "4.__________2c66f5dd.webp",
+    "5._________841a7631.webp",
+    "6.__________a1bfed9e.webp"
+  ]),
+  char_07: buildStandardPoses("7_65e65de4.webp", [
+    "1.________3c4301e6.webp",
+    "2.________b7076f05.webp",
+    "3.______9061f5db.webp",
+    "4.__________7407f0d6.webp",
+    "5._________a22524f8.webp",
+    "6.__________64849bb6.webp"
+  ]),
+  char_08: buildStandardPoses("8_f6576340.webp", [
+    "1.________113d0c86.webp",
+    "2.________7c4ca148.webp",
+    "3.______706df045.webp",
+    "4.__________48686f0b.webp",
+    "5._________67d7bc13.webp",
+    "6.__________ad996298.webp"
+  ]),
+  char_10: buildStandardPoses("10_20cce168.webp", [
+    "1.________049ee519.webp",
+    "2.________ccce7d6e.webp",
+    "3.______c4812d4f.webp",
+    "4.__________316abaea.webp",
+    "5._________ba75d86c.webp",
+    "6.__________53cd53f8.webp"
+  ]),
+  char_11: buildStandardPoses("11_def2bfdc.webp", [
+    "1.________521818aa.webp",
+    "2.________cd20711b.webp",
+    "3.______d9b75ae3.webp",
+    "4.__________af36587c.webp",
+    "5._________3febf71f.webp",
+    "6.__________1cd01e55.webp"
+  ]),
+  char_12: buildStandardPoses("12_19d1dc9a.webp", [
+    "1.________b2279002.webp",
+    "2.________e6f9a044.webp",
+    "3.______1a19a760.webp",
+    "4.__________f294cecc.webp",
+    "5._________baadcbb7.webp",
+    "6.__________a8253416.webp"
+  ]),
+  char_13: buildStandardPoses("13_8c7ac19c.webp", [
+    "1.________c27febfb.webp",
+    "2.________d828f5eb.webp",
+    "3.______861b6b13.webp",
+    "4.__________57dbd265.webp",
+    "5._________0b59ff33.webp",
+    "6.__________0357190e.webp"
+  ]),
+  char_14: buildStandardPoses("14_7a8344ae.webp", [
+    "1.________3b8e15a1.webp",
+    "2.________4119ec82.webp",
+    "3.______7fe3161c.webp",
+    "4.__________28876ded.webp",
+    "5._________df48c8ad.webp",
+    "6.__________6eab71fb.webp"
+  ])
 };
 function getCharacterPoses(avatarId) {
   const custom = CHARACTER_POSES[avatarId];

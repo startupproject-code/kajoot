@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Image as ImageIcon,
   Layers,
+  Loader2,
   LogIn,
   LogOut,
   Pencil,
@@ -791,9 +792,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               <div
                 role="alert"
                 data-testid="moderator-auth-notice"
-                className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-medium text-amber-900 text-left"
+                className={`rounded-2xl border px-4 py-3 text-sm font-medium text-left flex items-start gap-2.5 ${
+                  authError && !sessionExpiredNotice && authError !== 'ยกเลิกการเข้าสู่ระบบด้วย Google'
+                    ? 'bg-rose-50 border-rose-200 text-rose-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
               >
-                {noticeMessage}
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{noticeMessage}</span>
               </div>
             )}
 
@@ -803,9 +809,13 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 data-testid="moderator-login-btn"
                 onClick={() => void signInWithGoogle()}
                 disabled={signingIn}
-                className="w-full min-h-[48px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold text-sm inline-flex items-center justify-center gap-2.5 shadow-md shadow-indigo-600/20 transition-colors"
+                className="w-full min-h-[48px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm inline-flex items-center justify-center gap-2.5 shadow-md shadow-indigo-600/20 transition-colors"
               >
-                <LogIn className="w-5 h-5" />
+                {signingIn ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <LogIn className="w-5 h-5" />
+                )}
                 <span>
                   {signingIn ? 'กำลังเปิดหน้าต่าง Google...' : 'เข้าสู่ระบบด้วย Google (Gmail)'}
                 </span>

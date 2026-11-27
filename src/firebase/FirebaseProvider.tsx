@@ -8,6 +8,7 @@ import {
   readLastActivityMs,
   writeLastActivityMs,
 } from '../utils/sessionTimeout';
+import { mapGoogleAuthError } from './authErrors';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebaseClient';
 
 interface FirebaseContextValue {
@@ -67,6 +68,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const lastActivityRef = useRef<number>(readLastActivityMs() ?? Date.now());
   const lastWriteThrottleRef = useRef<number>(0);
+  const signingInRef = useRef<boolean>(false);
 
   const performAutoLogout = useCallback(async () => {
     clearLastActivityMs();
@@ -158,29 +160,38 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [user, performAutoLogout]);
 
   const signInWithGoogle = useCallback(async (): Promise<User | null> => {
+    if (signingInRef.current) {
+      return null;
+    }
+
+    signingInRef.current = true;
     setSigningIn(true);
     setAuthError(null);
     setSessionExpiredNotice(null);
+
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const now = Date.now();
       lastActivityRef.current = now;
       lastWriteThrottleRef.current = now;
       writeLastActivityMs(now);
-      await syncUserProfile(cred.user);
+      setSessionExpiredNotice(null);
       setUser(cred.user);
+      void syncUserProfile(cred.user).catch((syncErr) => {
+        console.error('Failed to sync user profile after sign-in:', syncErr);
+      });
       return cred.user;
     } catch (error) {
-      const code = (error as { code?: string })?.code;
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        setAuthError('คุณปิดหน้าต่างเข้าสู่ระบบ Google กรุณากดลองใหม่อีกครั้ง');
-      } else if (code === 'auth/popup-blocked') {
-        setAuthError('เบราว์เซอร์บล็อกหน้าต่างเข้าสู่ระบบ กรุณาอนุญาต Pop-up แล้วกดอีกครั้ง');
-      } else {
-        setAuthError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาลองใหม่อีกครั้ง');
+      const mapped = mapGoogleAuthError(error);
+      if (mapped.shouldLog) {
+        console.error('Google sign-in error:', mapped.code ?? 'unknown', error);
+      }
+      if (mapped.message) {
+        setAuthError(mapped.message);
       }
       return null;
     } finally {
+      signingInRef.current = false;
       setSigningIn(false);
     }
   }, []);
