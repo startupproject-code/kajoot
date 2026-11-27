@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { Award, Flame, Search, Trophy } from 'lucide-react';
-import { AVATARS, PlayerPublic } from '../shared/types';
+import { Award, Flame, Search } from 'lucide-react';
+import { PlayerPublic } from '../shared/types';
 import { CuteAvatar } from './CuteAvatar';
+import { PodiumStage } from './PodiumStage';
 
 interface LeaderboardStageProps {
   players: PlayerPublic[];
   totalQuestions: number;
   highlightPlayerId?: string;
   isFinal?: boolean;
+  hidePodium?: boolean;
+  fireworksBurstKey?: number;
   darkSurface?: boolean;
 }
 
@@ -16,6 +19,8 @@ export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
   totalQuestions,
   highlightPlayerId,
   isFinal = false,
+  hidePodium = false,
+  fireworksBurstKey = 0,
   darkSurface = true,
 }) => {
   const [search, setSearch] = useState('');
@@ -24,8 +29,6 @@ export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
   const filteredPlayers = search.trim()
     ? players.filter((p) => p.name.toLowerCase().includes(search.trim().toLowerCase()))
     : players;
-
-  const podiumOrder = [top3[1], top3[0], top3[2]]; // 2nd, 1st, 3rd
 
   const cardBg = darkSurface
     ? 'bg-slate-800/90 border-slate-700 text-slate-100'
@@ -36,79 +39,12 @@ export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
 
   return (
     <div className="w-full space-y-6" data-testid="leaderboard-stage">
-      {isFinal && top3.length > 0 && (
-        <div className="pt-2 pb-4">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <Trophy className="w-7 h-7 text-amber-400" />
-            <h2
-              className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${
-                darkSurface ? 'text-white' : 'text-slate-900'
-              }`}
-            >
-              แท่นผู้ชนะอันดับสูงสุด
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 sm:gap-5 items-end max-w-2xl mx-auto px-2">
-            {podiumOrder.map((player, idx) => {
-              const place = idx === 0 ? 2 : idx === 1 ? 1 : 3;
-              if (!player) {
-                return <div key={`empty-${place}`} className="h-24" />;
-              }
-
-              const pedestalHeight =
-                place === 1 ? 'h-36 sm:h-44' : place === 2 ? 'h-28 sm:h-32' : 'h-24 sm:h-28';
-              const pedestalStyle =
-                place === 1
-                  ? 'bg-amber-500 text-slate-950'
-                  : place === 2
-                    ? 'bg-slate-300 text-slate-900'
-                    : 'bg-orange-400 text-slate-950';
-              const avatarName =
-                AVATARS.find((a) => a.id === player.avatarId)?.name ?? '';
-
-              return (
-                <div
-                  key={player.id}
-                  className="flex flex-col items-center text-center"
-                >
-                  <div className="mb-2 relative">
-                    <CuteAvatar
-                      avatarId={player.avatarId}
-                      size={place === 1 ? 84 : 68}
-                      className={`ring-4 ${
-                        place === 1
-                          ? 'ring-amber-400'
-                          : place === 2
-                            ? 'ring-slate-300'
-                            : 'ring-orange-400'
-                      } shadow-lg`}
-                    />
-                  </div>
-                  <div
-                    className={`font-bold text-sm sm:text-base truncate max-w-[110px] sm:max-w-[150px] ${
-                      darkSurface ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {player.name}
-                  </div>
-                  <div className={`text-xs mb-2 ${mutedText}`}>{avatarName}</div>
-                  <div
-                    className={`w-full rounded-t-2xl ${pedestalHeight} ${pedestalStyle} flex flex-col items-center justify-center px-2 shadow-lg`}
-                  >
-                    <span className="font-mono tabular-nums text-2xl sm:text-3xl font-extrabold leading-none">
-                      #{place}
-                    </span>
-                    <span className="font-mono tabular-nums text-sm sm:text-base font-bold mt-1.5">
-                      {player.score.toLocaleString()}
-                    </span>
-                    <span className="text-[11px] font-semibold opacity-80">คะแนน</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {isFinal && !hidePodium && top3.length > 0 && (
+        <PodiumStage
+          players={players}
+          fireworksBurstKey={fireworksBurstKey}
+          darkSurface={darkSurface}
+        />
       )}
 
       <div className={`rounded-2xl border p-4 sm:p-5 ${cardBg}`}>

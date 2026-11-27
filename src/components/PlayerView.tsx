@@ -850,6 +850,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             totalQuestions={roomState.totalQuestions}
             highlightPlayerId={guestPlayerId}
             isFinal={true}
+            fireworksBurstKey={1}
             darkSurface={true}
           />
 

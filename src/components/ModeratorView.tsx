@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Trophy,
   Upload,
@@ -76,6 +77,7 @@ import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
 import { LobbyPoseStage } from './LobbyPoseStage';
 import { MediaStage } from './MediaStage';
+import { PodiumStage } from './PodiumStage';
 
 interface ModeratorViewProps {
   onBackHome: () => void;
@@ -194,6 +196,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [roomError, setRoomError] = useState<string | null>(null);
   const [launchingRoom, setLaunchingRoom] = useState(false);
   const [kickingPlayerId, setKickingPlayerId] = useState<string | null>(null);
+  const [fireworksBurstKey, setFireworksBurstKey] = useState(0);
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const lastSoundSecRef = useRef<number | null>(null);
@@ -383,9 +386,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       .catch(() => setQrDataUrl(''));
   }, [roomState?.code]);
 
-  // Sound effects synced to timer & phase transitions
+  // Sound effects & fireworks synced to timer & phase transitions
   useEffect(() => {
-    if (!roomState) return;
+    if (!roomState) {
+      lastPhaseRef.current = null;
+      return;
+    }
     const prevPhase = lastPhaseRef.current;
     lastPhaseRef.current = roomState.phase;
 
@@ -409,6 +415,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       lastSoundSecRef.current = null;
     } else if (roomState.phase === 'ENDED' && prevPhase !== 'ENDED') {
       soundFx.playPodiumFanfare();
+      setFireworksBurstKey((k) => k + 1);
     }
   }, [roomState]);
 
@@ -1335,7 +1342,10 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
         {/* PHASE: ENDED */}
         {roomState.phase === 'ENDED' && (
-          <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-8 space-y-6">
+          <main
+            data-testid="moderator-ended-stage"
+            className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-6"
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
@@ -1369,15 +1379,40 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   <RotateCcw className="w-4 h-4" />
                   <span>เปิดห้องรอบใหม่</span>
                 </button>
+                <button
+                  type="button"
+                  data-testid="host-fireworks-btn"
+                  onClick={() => {
+                    soundFx.unlock();
+                    soundFx.playPodiumFanfare();
+                    setFireworksBurstKey((k) => k + 1);
+                  }}
+                  className="min-h-[44px] px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-bold inline-flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>จุดพลุฉลอง</span>
+                </button>
               </div>
             </div>
 
-            <LeaderboardStage
-              players={roomState.players}
-              totalQuestions={roomState.totalQuestions}
-              isFinal={true}
-              darkSurface={true}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-7">
+                <PodiumStage
+                  players={roomState.players}
+                  fireworksBurstKey={fireworksBurstKey}
+                  darkSurface={true}
+                />
+              </div>
+              <div className="lg:col-span-5">
+                <LeaderboardStage
+                  players={roomState.players}
+                  totalQuestions={roomState.totalQuestions}
+                  isFinal={true}
+                  hidePodium={true}
+                  darkSurface={true}
+                />
+              </div>
+            </div>
           </main>
         )}
       </div>
