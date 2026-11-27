@@ -7,6 +7,7 @@ interface CuteAvatarProps {
   poseId?: string;
   size?: number;
   className?: string;
+  lazy?: boolean;
 }
 
 export const CuteAvatar: React.FC<CuteAvatarProps> = ({
@@ -14,6 +15,7 @@ export const CuteAvatar: React.FC<CuteAvatarProps> = ({
   poseId,
   size = 48,
   className = '',
+  lazy = false,
 }) => {
   const meta = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
   const poseMeta = resolvePlayerPoseImage(avatarId, poseId);
@@ -34,6 +36,8 @@ export const CuteAvatar: React.FC<CuteAvatarProps> = ({
         <img
           src={poseMeta.imagePath}
           alt={`${meta.name}${poseMeta.id !== 'default' ? ` (${poseMeta.label})` : ''}`}
+          loading={lazy ? 'lazy' : undefined}
+          decoding="async"
           draggable={false}
           onError={() => setImgFailed(true)}
           className="w-full h-full object-cover object-top"

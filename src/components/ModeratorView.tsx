@@ -1013,6 +1013,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                             avatarId={p.avatarId}
                             poseId={p.poseId}
                             size={34}
+                            lazy
                           />
                           <div className="min-w-0">
                             <div className="font-semibold text-sm text-white truncate">

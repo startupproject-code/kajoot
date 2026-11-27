@@ -265,16 +265,42 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
   });
 
   it('validates character poseId assets on players and allows poseId self-update + host kick delete in rules', async () => {
-    const { isValidPoseForAvatar, getCharacterPoses, resolvePlayerPoseImage } = await import('./src/shared/characterPoses');
+    const {
+      CHARACTER_POSES,
+      isValidPoseForAvatar,
+      getCharacterPoses,
+      resolvePlayerPoseImage,
+    } = await import('./src/shared/characterPoses');
+    const { AVATARS } = await import('./src/shared/types');
     const prodRules = fs.readFileSync('firestore.rules', 'utf8');
 
     const char05Poses = getCharacterPoses('char_05');
     assert.equal(char05Poses.length, 7);
     assert.equal(isValidPoseForAvatar('char_05', 'pose_6'), true);
     assert.equal(isValidPoseForAvatar('char_05', 'pose_999'), false);
-    assert.equal(isValidPoseForAvatar('char_01', 'pose_1'), false);
-    assert.equal(resolvePlayerPoseImage('char_05', 'pose_1').imagePath, '/assets/aistudio/1.________2ee20ed8.jpg');
-    assert.equal(resolvePlayerPoseImage('char_01', 'pose_1').id, 'default');
+    assert.equal(isValidPoseForAvatar('char_01', 'pose_1'), true);
+    assert.equal(isValidPoseForAvatar('char_14', 'pose_6'), true);
+    assert.equal(isValidPoseForAvatar('char_09', 'pose_1'), false);
+    assert.equal(resolvePlayerPoseImage('char_05', 'pose_1').imagePath, '/assets/aistudio/1.________2ee20ed8.webp');
+    assert.equal(resolvePlayerPoseImage('char_09', 'pose_1').id, 'default');
+
+    // Every avatar and pose asset must be a .webp file present under public/
+    const poseCharacters = Object.keys(CHARACTER_POSES);
+    assert.equal(poseCharacters.length, 13);
+    const seenPosePaths = new Set<string>();
+    for (const av of AVATARS) {
+      assert.match(av.imagePath, /\.webp$/, `Expected ${av.id} to use .webp`);
+      assert.equal(fs.existsSync(`public${av.imagePath}`), true, `Missing avatar file public${av.imagePath}`);
+      for (const pose of getCharacterPoses(av.id)) {
+        assert.match(pose.imagePath, /\.webp$/, `Expected ${av.id}/${pose.id} to use .webp`);
+        assert.equal(fs.existsSync(`public${pose.imagePath}`), true, `Missing pose file public${pose.imagePath}`);
+        if (pose.id !== 'default') {
+          assert.equal(seenPosePaths.has(pose.imagePath), false, `Duplicate pose image ${pose.imagePath}`);
+          seenPosePaths.add(pose.imagePath);
+        }
+      }
+    }
+    assert.equal(seenPosePaths.size, 78);
 
     const validPosePayload = validateRoomPlayerPayload(
       {
@@ -283,7 +309,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Ton',
-        avatarId: 'char_05',
+        avatarId: 'char_14',
         poseId: 'pose_4',
         score: 0,
         streak: 0,
@@ -307,7 +333,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Ton',
-        avatarId: 'char_01',
+        avatarId: 'char_09',
         poseId: 'pose_1',
         score: 0,
         streak: 0,

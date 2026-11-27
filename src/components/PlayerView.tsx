@@ -49,6 +49,8 @@ interface PlayerViewProps {
 
 type JoinStep = 'ENTER_CODE' | 'SETUP_PROFILE' | 'IN_ROOM';
 
+const POSE_UPDATE_COOLDOWN_MS = 3000;
+
 export const PlayerView: React.FC<PlayerViewProps> = ({
   initialRoomCode = '',
   onBackHome,
@@ -62,6 +64,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [avatarId, setAvatarId] = useState<AvatarId>('char_01');
   const [poseId, setPoseId] = useState<string>(DEFAULT_POSE_ID);
   const [updatingPose, setUpdatingPose] = useState(false);
+  const [poseCooldownRemainingMs, setPoseCooldownRemainingMs] = useState(0);
 
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [selfPlayerDoc, setSelfPlayerDoc] = useState<FirestorePlayerDoc | null>(null);
@@ -76,6 +79,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
   const autoCheckedRef = useRef(false);
   const hadJoinedSelfRef = useRef(false);
+  const lastPoseWriteAtRef = useRef(0);
+  const poseCooldownUntilRef = useRef(0);
   const lastSoundSecRef = useRef<number | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
   const lastQuestionIdxRef = useRef<number>(-1);
@@ -166,6 +171,17 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     return () => window.clearInterval(timer);
   }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
 
+  // 3s pose change cooldown ticker to prevent spamming Firestore writes
+  const isPoseCooldownActive = poseCooldownRemainingMs > 0;
+  useEffect(() => {
+    if (!isPoseCooldownActive) return;
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(0, poseCooldownUntilRef.current - Date.now());
+      setPoseCooldownRemainingMs(remaining);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isPoseCooldownActive]);
+
   const roomState = useMemo(() => {
     if (!roomDoc) return null;
     return roomDocToPublicState(roomDoc, nowMs);
@@ -248,7 +264,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
   const handlePoseChange = async (nextPoseId: string) => {
     const activeAvatar = selfPlayerDoc?.avatarId ?? avatarId;
+    const currentPose = selfPlayerDoc?.poseId ?? poseId;
+    if (nextPoseId === currentPose) return;
+
+    const now = Date.now();
+    if (updatingPose || now - lastPoseWriteAtRef.current < POSE_UPDATE_COOLDOWN_MS) {
+      return;
+    }
+
+    lastPoseWriteAtRef.current = now;
+    poseCooldownUntilRef.current = now + POSE_UPDATE_COOLDOWN_MS;
+    setPoseCooldownRemainingMs(POSE_UPDATE_COOLDOWN_MS);
     setPoseId(nextPoseId);
+
     if (!roomDoc?.code) return;
     setUpdatingPose(true);
     try {
@@ -598,10 +626,11 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 <select
                   id="player-pose-select"
                   data-testid="player-pose-select"
+                  data-cooldown={isPoseCooldownActive ? 'true' : 'false'}
                   value={lobbyPoseId}
-                  disabled={!canChooseExtraPoses || updatingPose}
+                  disabled={!canChooseExtraPoses || updatingPose || isPoseCooldownActive}
                   onChange={(e) => void handlePoseChange(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-75"
+                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-65 disabled:cursor-not-allowed"
                 >
                   {availablePoses.map((pose) => (
                     <option key={pose.id} value={pose.id}>
@@ -609,11 +638,20 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                     </option>
                   ))}
                 </select>
-                {!canChooseExtraPoses && (
-                  <p className="text-xs text-slate-400">
-                    ตอนนี้เปิดทดสอบท่าทางกับตัวละคร &quot;น้องหมวกแก๊ปเขียว&quot; ตัวละครอื่นแสดงท่าปกติ
-                  </p>
-                )}
+                <div className="min-h-[18px]">
+                  {!canChooseExtraPoses ? (
+                    <p className="text-xs text-slate-400">
+                      ตัวละครนี้แสดงท่าปกติ
+                    </p>
+                  ) : isPoseCooldownActive ? (
+                    <p
+                      data-testid="player-pose-cooldown-hint"
+                      className="text-xs text-indigo-300 tabular-nums"
+                    >
+                      รอ {(poseCooldownRemainingMs / 1000).toFixed(1)} วินาที ก่อนเปลี่ยนท่าทางอีกครั้ง
+                    </p>
+                  ) : null}
+                </div>
               </div>
 
               <div className="pt-3 border-t border-slate-700/80 flex items-center justify-center gap-2 text-sm text-slate-300 font-mono tabular-nums">

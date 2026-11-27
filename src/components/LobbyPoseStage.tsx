@@ -4,8 +4,9 @@ import { resolvePlayerPoseImage } from '../shared/characterPoses';
 import { PlayerPublic } from '../shared/types';
 import {
   LOBBY_CAROUSEL_INTERVAL_MS,
+  MAX_LOBBY_CARDS_PER_ROW,
+  getWindowedCarouselItems,
   partitionLobbyPlayers,
-  rotateItems,
 } from '../utils/lobbyPoseLogic';
 
 interface LobbyPoseStageProps {
@@ -20,7 +21,7 @@ interface PoseCardProps {
   sizeClass?: string;
 }
 
-const PoseCard: React.FC<PoseCardProps> = ({
+const PoseCard: React.FC<PoseCardProps> = React.memo(({
   player,
   sizeClass = 'w-[150px]',
 }) => {
@@ -42,6 +43,8 @@ const PoseCard: React.FC<PoseCardProps> = ({
           <img
             src={poseMeta.imagePath}
             alt={`${player.name} (${poseMeta.label})`}
+            loading="lazy"
+            decoding="async"
             draggable={false}
             onError={() => setImgFailed(true)}
             className="absolute inset-0 w-full h-full object-cover object-top"
@@ -64,7 +67,7 @@ const PoseCard: React.FC<PoseCardProps> = ({
       </div>
     </article>
   );
-};
+});
 
 interface SlidingCarouselRowProps {
   players: PlayerPublic[];
@@ -91,7 +94,10 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
     return direction === 'right' ? -activeTick : activeTick;
   }, [direction, len, activeTick]);
 
-  const orderedPlayers = useMemo(() => rotateItems(players, offset), [players, offset]);
+  const visiblePlayers = useMemo(
+    () => getWindowedCarouselItems(players, offset, MAX_LOBBY_CARDS_PER_ROW),
+    [players, offset]
+  );
 
   useEffect(() => {
     if (prevTickRef.current === tick) return;
@@ -126,7 +132,7 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
       };
     }
 
-    // Leftward: glide current cards left (0 -> -162px), then snap-reset and rotate
+    // Leftward: glide current cards left (0 -> -162px), then snap-reset and rotate window
     setAnimateTransition(true);
     setShiftPx(-CAROUSEL_CARD_STEP_PX);
     const settleTimer = window.setTimeout(() => {
@@ -145,18 +151,20 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
       data-testid={testId}
       data-direction={direction}
       data-offset={direction === 'right' ? -tick : tick}
+      data-rendered-cards={visiblePlayers.length}
       className="w-full overflow-hidden py-1"
     >
       <div
         className="flex items-stretch gap-3"
         style={{
           transform: `translate3d(${shiftPx}px, 0, 0)`,
+          willChange: animateTransition ? 'transform' : 'auto',
           transition: animateTransition
             ? 'transform 550ms cubic-bezier(0.16, 1, 0.3, 1)'
             : 'none',
         }}
       >
-        {orderedPlayers.map((p) => (
+        {visiblePlayers.map((p) => (
           <PoseCard key={p.id} player={p} sizeClass="w-[150px]" />
         ))}
       </div>
