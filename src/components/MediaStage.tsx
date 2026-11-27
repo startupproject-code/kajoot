@@ -7,6 +7,7 @@ interface MediaStageProps {
   videoUrl?: string;
   compact?: boolean;
   hostFit?: boolean;
+  hostExpanded?: boolean;
 }
 
 export const MediaStage: React.FC<MediaStageProps> = ({
@@ -14,6 +15,7 @@ export const MediaStage: React.FC<MediaStageProps> = ({
   videoUrl,
   compact = false,
   hostFit = false,
+  hostExpanded = false,
 }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -29,30 +31,44 @@ export const MediaStage: React.FC<MediaStageProps> = ({
     return null;
   }
 
+  const isHostMode = hostExpanded || hostFit;
+
   const maxHClass = compact
     ? 'max-h-24 sm:max-h-36'
+    : hostExpanded
+    ? 'max-h-[42vh] h-full'
     : hostFit
-    ? 'max-h-36 sm:max-h-40 md:max-h-[24vh]'
+    ? 'max-h-[24vh] h-full'
     : 'max-h-72';
+
+  const videoMaxWClass = hostExpanded ? 'max-w-2xl' : 'max-w-md';
 
   return (
     <div
-      className={`w-full flex flex-col sm:flex-row items-center justify-center gap-3 ${
-        compact || hostFit ? 'my-1' : 'my-3'
+      className={`w-full ${
+        isHostMode ? 'flex-1 min-h-0' : ''
+      } flex flex-col sm:flex-row items-center justify-center gap-3 transition-all duration-300 ${
+        compact || hostFit ? 'my-0.5' : hostExpanded ? 'my-1' : 'my-3'
       }`}
     >
       {hasImage && (
-        <div className="w-full max-w-md rounded-2xl overflow-hidden bg-slate-900/60 border border-slate-700/80 flex items-center justify-center">
+        <div
+          className={`${
+            isHostMode ? 'h-full min-h-0 flex-1' : ''
+          } flex items-center justify-center max-w-full transition-all duration-300`}
+        >
           {!imgError ? (
             <img
               src={imageUrl}
               alt="ภาพประกอบคำถาม"
               referrerPolicy="no-referrer"
               onError={() => setImgError(true)}
-              className={`w-full ${maxHClass} object-contain`}
+              className={`${
+                isHostMode ? 'max-h-full w-auto max-w-full' : `w-full ${maxHClass}`
+              } object-contain rounded-2xl border border-slate-700/80 bg-slate-900/60 shadow-lg transition-all duration-300`}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 px-4 text-slate-400 text-sm">
+            <div className="flex flex-col items-center justify-center gap-2 py-8 px-6 rounded-2xl border border-slate-700/80 bg-slate-900/60 text-slate-400 text-sm">
               <ImageOff className="w-7 h-7 opacity-70" />
               <span>ไม่สามารถโหลดรูปภาพประกอบได้</span>
             </div>
@@ -61,7 +77,9 @@ export const MediaStage: React.FC<MediaStageProps> = ({
       )}
 
       {hasVideo && (
-        <div className="w-full max-w-md rounded-2xl overflow-hidden bg-black border border-slate-700/80">
+        <div
+          className={`w-full ${videoMaxWClass} rounded-2xl overflow-hidden bg-black border border-slate-700/80 transition-all duration-300`}
+        >
           {video.type === 'youtube' ? (
             <div className="aspect-video w-full">
               <iframe

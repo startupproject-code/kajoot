@@ -14,6 +14,7 @@ export const CuteAvatar: React.FC<CuteAvatarProps> = ({
 }) => {
   const meta = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
   const [imgFailed, setImgFailed] = useState(false);
+  const isCharacter = meta.category === 'character';
 
   return (
     <div
@@ -28,7 +29,7 @@ export const CuteAvatar: React.FC<CuteAvatarProps> = ({
           alt={meta.name}
           draggable={false}
           onError={() => setImgFailed(true)}
-          className="w-full h-full object-cover"
+          className={`w-full h-full ${isCharacter ? 'object-contain p-0.5' : 'object-cover'}`}
         />
       ) : (
         <span className="font-bold text-slate-700 text-sm">

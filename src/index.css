@@ -21,8 +21,90 @@
   animation: urgentBlink 0.65s ease-in-out infinite;
 }
 
+@keyframes parkWalkBob {
+  0%, 100% {
+    transform: translateY(0px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+
+@keyframes parkRunDash {
+  0%, 100% {
+    transform: translateY(0px) rotate(-5deg) scale(1.02);
+  }
+  50% {
+    transform: translateY(-10px) rotate(5deg) scale(1.04);
+  }
+}
+
+@keyframes parkSitRest {
+  0%, 100% {
+    transform: translateY(4px) scaleY(0.92) scaleX(1.03);
+  }
+  50% {
+    transform: translateY(5px) scaleY(0.90) scaleX(1.04);
+  }
+}
+
+@keyframes parkWaveJump {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  30% {
+    transform: translateY(-13px) scale(1.06) rotate(-4deg);
+  }
+  65% {
+    transform: translateY(-5px) scale(1.03) rotate(4deg);
+  }
+}
+
+@keyframes parkBubblePop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, 0px) scale(1);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(-50%, 0px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.95);
+  }
+}
+
+.animate-park-walk {
+  animation: parkWalkBob 0.55s ease-in-out infinite;
+}
+
+.animate-park-run {
+  animation: parkRunDash 0.34s ease-in-out infinite;
+}
+
+.animate-park-sit {
+  animation: parkSitRest 2.2s ease-in-out infinite;
+}
+
+.animate-park-wave {
+  animation: parkWaveJump 0.7s ease-in-out infinite;
+}
+
+.animate-park-bubble {
+  animation: parkBubblePop 3.4s ease-out forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-urgent-blink {
+  .animate-urgent-blink,
+  .animate-park-walk,
+  .animate-park-run,
+  .animate-park-sit,
+  .animate-park-wave {
     animation: none;
   }
 }

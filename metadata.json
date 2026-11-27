@@ -1,6 +1,6 @@
 {
   "name": "QuizArena Live",
-  "description": "เกมตอบคำถามความรู้ทั่วไปแบบเรียลไทม์ รองรับผู้เล่นสูงสุด 200 คนต่อห้อง พร้อมตารางจัดอันดับสด",
+  "description": "เกมตอบคำถามความรู้ทั่วไปแบบเรียลไทม์ รองรับผู้เล่นสูงสุด 100 คนต่อห้อง พร้อมตารางจัดอันดับสด",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
