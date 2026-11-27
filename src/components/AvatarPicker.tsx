@@ -16,48 +16,53 @@ export const AvatarPicker: React.FC<AvatarPickerProps> = ({ value, onChange }) =
 
   return (
     <div className="w-full space-y-2.5" data-testid="avatar-picker">
-      {/* Outer rounded frame matching wireframe */}
+      {/* Outer rounded frame matching wireframe; scroll container separated from grid to prevent iOS Safari track collapse */}
       <div className="rounded-3xl border-2 border-slate-200 bg-slate-50/80 p-3 sm:p-4 shadow-inner">
         <div
-          role="radiogroup"
-          aria-label="เลือกตัวละครของคุณ"
           data-testid="avatar-grid-scroller"
-          className="grid grid-cols-4 gap-2.5 sm:gap-3.5 max-h-[236px] sm:max-h-[296px] overflow-y-scroll pr-2.5 sm:pr-3 py-1 px-0.5 avatar-grid-scrollbar"
+          className="max-h-[256px] sm:max-h-[304px] overflow-y-auto pr-2 sm:pr-2.5 py-1.5 px-1 avatar-grid-scrollbar"
         >
-          {AVATARS.map((av) => {
-            const isActive = av.id === value;
-            return (
-              <button
-                key={av.id}
-                type="button"
-                role="radio"
-                aria-checked={isActive}
-                aria-label={av.name}
-                data-testid={`avatar-option-${av.id}`}
-                onClick={() => onChange(av.id)}
-                className={`group relative aspect-square min-h-[44px] min-w-[44px] w-full rounded-2xl overflow-hidden transition-transform duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                  isActive
-                    ? 'border-[3px] border-indigo-600 ring-2 ring-indigo-500/30 bg-indigo-50 shadow-md scale-[1.02]'
-                    : 'border-2 border-slate-200 bg-white hover:border-indigo-300 hover:scale-[1.02]'
-                }`}
-              >
-                <img
-                  src={av.imagePath}
-                  alt={av.name}
-                  draggable={false}
-                  className="w-full h-full object-cover object-top"
-                />
-                {isActive && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow"
+          <div
+            role="radiogroup"
+            aria-label="เลือกตัวละครของคุณ"
+            className="grid grid-cols-4 gap-3 sm:gap-3.5"
+          >
+            {AVATARS.map((av) => {
+              const isActive = av.id === value;
+              return (
+                <div key={av.id} className="min-w-0">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    aria-label={av.name}
+                    data-testid={`avatar-option-${av.id}`}
+                    onClick={() => onChange(av.id)}
+                    className={`relative block w-full h-auto pb-[100%] p-0 min-h-[44px] min-w-[44px] rounded-2xl overflow-hidden transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                      isActive
+                        ? 'ring-[3px] ring-indigo-600 ring-offset-2 ring-offset-slate-50 bg-indigo-50 shadow-md'
+                        : 'border-2 border-slate-200 bg-white hover:border-indigo-300'
+                    }`}
                   >
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                    <img
+                      src={av.imagePath}
+                      alt={av.name}
+                      draggable={false}
+                      className="absolute inset-0 w-full h-full object-cover object-top"
+                    />
+                    {isActive && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow"
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </span>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

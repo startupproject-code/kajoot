@@ -56,6 +56,10 @@ service cloud.firestore {
       return phase is string && phase.size() <= 20 && phase in ['LOBBY', 'QUESTION', 'REVEAL', 'LEADERBOARD', 'ENDED'];
     }
 
+    function isValidPoseId(poseId) {
+      return poseId is string && poseId.size() >= 1 && poseId.size() <= 32 && poseId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     // =========================================================================
     // Entity Validation Blueprints
     // =========================================================================
@@ -161,7 +165,7 @@ service cloud.firestore {
           'joinedAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'uid', 'roomCode', 'hostUid', 'name', 'avatarId',
+          'id', 'uid', 'roomCode', 'hostUid', 'name', 'avatarId', 'poseId',
           'score', 'streak', 'bestStreak', 'correctCount', 'answeredCount',
           'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'connected',
           'joinedAt', 'updatedAt'
@@ -172,6 +176,7 @@ service cloud.firestore {
         && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 24
         && isValidAvatar(data.avatarId)
+        && (!('poseId' in data) || isValidPoseId(data.poseId))
         && data.score is int && data.score >= 0
         && data.streak is int && data.streak >= 0
         && data.bestStreak is int && data.bestStreak >= 0
@@ -358,7 +363,7 @@ service cloud.firestore {
               && existing().hostUid == request.auth.uid
               && incoming().diff(existing()).affectedKeys().hasOnly(['score', 'streak', 'bestStreak', 'correctCount', 'answeredCount', 'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'updatedAt'])) ||
             // Tier 2: Guest player updates own display profile & connection status only
-            (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'connected', 'updatedAt']))
+            (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'poseId', 'connected', 'updatedAt']))
           );
 
         allow delete: if isVerifiedUser()

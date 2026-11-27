@@ -20,7 +20,13 @@ import {
   roomDocToPublicState,
   subscribePlayerRoom,
   submitFirebaseAnswer,
+  updateFirebasePlayerPose,
 } from '../firebase/firebaseQuizService';
+import {
+  DEFAULT_POSE_ID,
+  getCharacterPoses,
+  hasExtraCharacterPoses,
+} from '../shared/characterPoses';
 import {
   AnswerIndex,
   AvatarId,
@@ -54,6 +60,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [verifiedQuizTitle, setVerifiedQuizTitle] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [avatarId, setAvatarId] = useState<AvatarId>('char_01');
+  const [poseId, setPoseId] = useState<string>(DEFAULT_POSE_ID);
+  const [updatingPose, setUpdatingPose] = useState(false);
 
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [selfPlayerDoc, setSelfPlayerDoc] = useState<FirestorePlayerDoc | null>(null);
@@ -67,6 +75,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [muted, setMuted] = useState(false);
 
   const autoCheckedRef = useRef(false);
+  const hadJoinedSelfRef = useRef(false);
   const lastSoundSecRef = useRef<number | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
   const lastQuestionIdxRef = useRef<number>(-1);
@@ -120,9 +129,24 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         setRoomDoc(nextRoom);
       },
       onPlayerSelf: (nextSelf) => {
-        setSelfPlayerDoc(nextSelf);
+        if (nextSelf) {
+          hadJoinedSelfRef.current = true;
+          setSelfPlayerDoc(nextSelf);
+          if (nextSelf.poseId) {
+            setPoseId(nextSelf.poseId);
+          }
+        } else if (hadJoinedSelfRef.current) {
+          hadJoinedSelfRef.current = false;
+          setSelfPlayerDoc(null);
+          setRoomDoc(null);
+          setStep('ENTER_CODE');
+          setErrorMsg('คุณถูก Moderator นำออกจากห้องแข่งขัน');
+        } else {
+          setSelfPlayerDoc(null);
+        }
       },
       onMissing: () => {
+        hadJoinedSelfRef.current = false;
         setErrorMsg('ห้องแข่งขันนี้ถูกปิดแล้ว');
         setStep('ENTER_CODE');
         setRoomDoc(null);
@@ -203,12 +227,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     setErrorMsg(null);
     setJoiningRoom(true);
     try {
+      hadJoinedSelfRef.current = false;
       await joinFirebaseRoom({
         code: roomCode,
         hostUid: verifiedHostUid,
         uid: guestPlayerId,
         name: cleanName,
         avatarId,
+        poseId,
       });
       setStep('IN_ROOM');
     } catch (err) {
@@ -217,6 +243,27 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       );
     } finally {
       setJoiningRoom(false);
+    }
+  };
+
+  const handlePoseChange = async (nextPoseId: string) => {
+    const activeAvatar = selfPlayerDoc?.avatarId ?? avatarId;
+    setPoseId(nextPoseId);
+    if (!roomDoc?.code) return;
+    setUpdatingPose(true);
+    try {
+      await updateFirebasePlayerPose({
+        code: roomDoc.code,
+        uid: guestPlayerId,
+        avatarId: activeAvatar,
+        poseId: nextPoseId,
+      });
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'ไม่สามารถเปลี่ยนท่าทางตัวละครได้'
+      );
+    } finally {
+      setUpdatingPose(false);
     }
   };
 
@@ -423,7 +470,13 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               <span className="block text-xs font-bold text-slate-600 text-center">
                 เลือกตัวละครของคุณ ({AVATARS.length} แบบ · เลื่อนขึ้น-ลงได้)
               </span>
-              <AvatarPicker value={avatarId} onChange={setAvatarId} />
+              <AvatarPicker
+                value={avatarId}
+                onChange={(nextId) => {
+                  setAvatarId(nextId);
+                  setPoseId(DEFAULT_POSE_ID);
+                }}
+              />
             </div>
 
             <button
@@ -469,7 +522,13 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       {/* Compact Player Top Bar */}
       <header className="shrink-0 border-b border-slate-800 bg-slate-950/75 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
-          {me && <CuteAvatar avatarId={me.avatarId} size={36} />}
+          {me && (
+            <CuteAvatar
+              avatarId={me.avatarId}
+              poseId={me.poseId || poseId}
+              size={36}
+            />
+          )}
           <div className="min-w-0">
             <div className="font-bold text-sm text-white truncate">
               {me?.name || playerName}
@@ -495,38 +554,78 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         </div>
       </header>
 
-      {/* LOBBY WAITING SCREEN */}
-      {roomState.phase === 'LOBBY' && (
-        <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-8 flex flex-col items-center justify-center text-center space-y-6">
-          <div className="rounded-3xl bg-slate-800/80 border border-slate-700 p-8 w-full space-y-5">
-            <div className="flex justify-center">
-              <CuteAvatar
-                avatarId={me?.avatarId || avatarId}
-                size={104}
-                className="ring-4 ring-indigo-500 shadow-xl"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <div className="text-sm font-semibold text-indigo-300">
-                เข้าห้อง {roomState.code} เรียบร้อยแล้ว!
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-                สวัสดี {me?.name || playerName}
-              </h1>
-              <p className="text-sm text-slate-300">
-                กรุณารอ Moderator กดเริ่มเกม... เตรียมนิ้วให้พร้อม!
-              </p>
-            </div>
+      {/* LOBBY WAITING SCREEN — TOP-ALIGNED ON MOBILE WITH POSE SELECTOR */}
+      {roomState.phase === 'LOBBY' && (() => {
+        const lobbyAvatarId = me?.avatarId || avatarId;
+        const lobbyPoseId = me?.poseId || poseId;
+        const availablePoses = getCharacterPoses(lobbyAvatarId);
+        const canChooseExtraPoses = hasExtraCharacterPoses(lobbyAvatarId);
 
-            <div className="pt-3 border-t border-slate-700/80 flex items-center justify-center gap-2 text-sm text-slate-300 font-mono tabular-nums">
-              <Users className="w-4 h-4 text-indigo-400" />
-              <span>
-                ผู้เล่นในห้อง {roomState.totalPlayers} / {MAX_PLAYERS_PER_ROOM} คน
-              </span>
+        return (
+          <main
+            data-testid="player-lobby-stage"
+            className="flex-1 max-w-2xl w-full mx-auto px-4 pt-4 pb-6 sm:pt-6 flex flex-col items-center justify-start text-center space-y-4"
+          >
+            <div className="rounded-3xl bg-slate-800/80 border border-slate-700 p-5 sm:p-7 w-full space-y-4">
+              <div className="flex justify-center">
+                <CuteAvatar
+                  avatarId={lobbyAvatarId}
+                  poseId={lobbyPoseId}
+                  size={120}
+                  className="ring-4 ring-indigo-500 shadow-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-indigo-300">
+                  เข้าห้อง {roomState.code} เรียบร้อยแล้ว!
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
+                  สวัสดี {me?.name || playerName}
+                </h1>
+                <p className="text-sm text-slate-300">
+                  กรุณารอ Moderator กดเริ่มเกม... เตรียมนิ้วให้พร้อม!
+                </p>
+              </div>
+
+              <div className="pt-1 space-y-1.5 text-left">
+                <label
+                  htmlFor="player-pose-select"
+                  className="block text-xs font-bold text-slate-300"
+                >
+                  เลือกท่าทางตัวละคร
+                </label>
+                <select
+                  id="player-pose-select"
+                  data-testid="player-pose-select"
+                  value={lobbyPoseId}
+                  disabled={!canChooseExtraPoses || updatingPose}
+                  onChange={(e) => void handlePoseChange(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-75"
+                >
+                  {availablePoses.map((pose) => (
+                    <option key={pose.id} value={pose.id}>
+                      {pose.label}
+                    </option>
+                  ))}
+                </select>
+                {!canChooseExtraPoses && (
+                  <p className="text-xs text-slate-400">
+                    ตอนนี้เปิดทดสอบท่าทางกับตัวละคร &quot;น้องหมวกแก๊ปเขียว&quot; ตัวละครอื่นแสดงท่าปกติ
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-slate-700/80 flex items-center justify-center gap-2 text-sm text-slate-300 font-mono tabular-nums">
+                <Users className="w-4 h-4 text-indigo-400" />
+                <span>
+                  ผู้เล่นในห้อง {roomState.totalPlayers} / {MAX_PLAYERS_PER_ROOM} คน
+                </span>
+              </div>
             </div>
-          </div>
-        </main>
-      )}
+          </main>
+        );
+      })()}
 
       {/* ACTIVE QUESTION PAD — FITS 100dvh MOBILE SCREEN WITHOUT SCROLLING */}
       {isQuestionPhase && q && (

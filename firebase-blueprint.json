@@ -262,6 +262,13 @@
           ],
           "maxLength": 20
         },
+        "poseId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Optional lobby expression/pose asset ID for the character."
+        },
         "score": { "type": "integer" },
         "streak": { "type": "integer" },
         "bestStreak": { "type": "integer" },

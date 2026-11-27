@@ -377,6 +377,16 @@ function processClientMessage(
       return null;
     }
 
+    case 'host:kick': {
+      if (ctx.role !== 'host' || !ctx.roomCode) return null;
+      const room = roomManager.getRoom(ctx.roomCode);
+      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (roomManager.kickPlayer(ctx.roomCode, msg.playerId)) {
+        broadcastRoomState(ctx.roomCode);
+      }
+      return null;
+    }
+
     case 'player:check_room': {
       const status = roomManager.checkRoomStatus(msg.code);
       return {
@@ -390,6 +400,7 @@ function processClientMessage(
         code: msg.code,
         name: msg.name,
         avatarId: msg.avatarId,
+        poseId: msg.poseId,
         playerId: msg.playerId,
       });
       if (ws && ctx.roomCode && ctx.roomCode !== room.code) {
@@ -407,6 +418,14 @@ function processClientMessage(
       };
       broadcastRoomState(room.code);
       return joinedReply;
+    }
+
+    case 'player:pose': {
+      if (ctx.role !== 'player' || !ctx.roomCode || !ctx.playerId) return null;
+      if (roomManager.updatePlayerPose(ctx.roomCode, ctx.playerId, msg.poseId)) {
+        broadcastRoomState(ctx.roomCode);
+      }
+      return null;
     }
 
     case 'player:answer': {

@@ -263,4 +263,70 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.equal(isValidAvatarId('cat'), false);
     assert.equal(isValidAvatarId('kid_01'), false);
   });
+
+  it('validates character poseId assets on players and allows poseId self-update + host kick delete in rules', async () => {
+    const { isValidPoseForAvatar, getCharacterPoses, resolvePlayerPoseImage } = await import('./src/shared/characterPoses');
+    const prodRules = fs.readFileSync('firestore.rules', 'utf8');
+
+    const char05Poses = getCharacterPoses('char_05');
+    assert.equal(char05Poses.length, 7);
+    assert.equal(isValidPoseForAvatar('char_05', 'pose_6'), true);
+    assert.equal(isValidPoseForAvatar('char_05', 'pose_999'), false);
+    assert.equal(isValidPoseForAvatar('char_01', 'pose_1'), false);
+    assert.equal(resolvePlayerPoseImage('char_05', 'pose_1').imagePath, '/assets/aistudio/1.________2ee20ed8.jpg');
+    assert.equal(resolvePlayerPoseImage('char_01', 'pose_1').id, 'default');
+
+    const validPosePayload = validateRoomPlayerPayload(
+      {
+        id: 'p_123456789012',
+        uid: 'p_123456789012',
+        roomCode: '4829',
+        hostUid: 'host-1',
+        name: 'Ton',
+        avatarId: 'char_05',
+        poseId: 'pose_4',
+        score: 0,
+        streak: 0,
+        bestStreak: 0,
+        correctCount: 0,
+        answeredCount: 0,
+        lastPoints: 0,
+        lastCorrect: null,
+        lastChoice: null,
+        rank: 1,
+        connected: true,
+      },
+      { authUid: 'p_123456789012', roomCode: '4829', totalPlayersInRoom: 1, isCreate: true }
+    );
+    assert.equal(validPosePayload.ok, true);
+
+    const invalidPosePayload = validateRoomPlayerPayload(
+      {
+        id: 'p_123456789012',
+        uid: 'p_123456789012',
+        roomCode: '4829',
+        hostUid: 'host-1',
+        name: 'Ton',
+        avatarId: 'char_01',
+        poseId: 'pose_1',
+        score: 0,
+        streak: 0,
+        bestStreak: 0,
+        correctCount: 0,
+        answeredCount: 0,
+        lastPoints: 0,
+        lastCorrect: null,
+        lastChoice: null,
+        rank: 1,
+        connected: true,
+      },
+      { authUid: 'p_123456789012', roomCode: '4829', totalPlayersInRoom: 1, isCreate: true }
+    );
+    assert.equal(invalidPosePayload.ok, false);
+
+    assert.match(rulesText, /isValidPoseId\(/);
+    assert.match(prodRules, /isValidPoseId\(/);
+    assert.match(prodRules, /hasOnly\(\['name', 'avatarId', 'poseId', 'connected', 'updatedAt'\]\)/);
+    assert.match(prodRules, /match \/players\/\{playerId\}[\s\S]*allow delete: if isVerifiedUser\(\)[\s\S]*existing\(\)\.hostUid == request\.auth\.uid;/);
+  });
 });

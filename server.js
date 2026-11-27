@@ -29,6 +29,69 @@ var AVATARS = [
   { id: "char_19", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E49\u0E32\u0E04\u0E32\u0E14\u0E2B\u0E31\u0E27\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/20_a8878a73.jpg", bgClass: "bg-pink-100", accentHex: "#F97316" }
 ];
 
+// src/shared/characterPoses.ts
+var DEFAULT_POSE_ID = "default";
+var CHARACTER_POSES = {
+  char_05: [
+    {
+      id: "default",
+      label: "\u0E17\u0E48\u0E32\u0E1B\u0E01\u0E15\u0E34",
+      imagePath: "/assets/aistudio/5_4381ac4c.jpg"
+    },
+    {
+      id: "pose_1",
+      label: "\u0E15\u0E32\u0E40\u0E2B\u0E25\u0E48\u0E41\u0E25\u0E1A\u0E25\u0E34\u0E49\u0E19",
+      imagePath: "/assets/aistudio/1.________2ee20ed8.jpg"
+    },
+    {
+      id: "pose_2",
+      label: "\u0E17\u0E33\u0E1B\u0E32\u0E01\u0E08\u0E39\u0E4B",
+      imagePath: "/assets/aistudio/2.________e7d0164b.jpg"
+    },
+    {
+      id: "pose_3",
+      label: "\u0E42\u0E01\u0E23\u0E18\u0E01\u0E2D\u0E14\u0E2D\u0E01",
+      imagePath: "/assets/aistudio/3.______e9ea8d3d.jpg"
+    },
+    {
+      id: "pose_4",
+      label: "\u0E02\u0E22\u0E34\u0E1A\u0E15\u0E32\u0E08\u0E34\u0E49\u0E21\u0E41\u0E01\u0E49\u0E21",
+      imagePath: "/assets/aistudio/4.__________97506b17.jpg"
+    },
+    {
+      id: "pose_5",
+      label: "\u0E23\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E49",
+      imagePath: "/assets/aistudio/5._________8f32f908.jpg"
+    },
+    {
+      id: "pose_6",
+      label: "\u0E2A\u0E48\u0E07\u0E2B\u0E31\u0E27\u0E43\u0E08",
+      imagePath: "/assets/aistudio/6.__________3cee0536.jpg"
+    }
+  ]
+};
+function getCharacterPoses(avatarId) {
+  const custom = CHARACTER_POSES[avatarId];
+  if (custom && custom.length > 0) {
+    return custom;
+  }
+  const baseMeta = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
+  return [
+    {
+      id: DEFAULT_POSE_ID,
+      label: "\u0E17\u0E48\u0E32\u0E1B\u0E01\u0E15\u0E34",
+      imagePath: baseMeta.imagePath
+    }
+  ];
+}
+function isValidPoseIdFormat(poseId) {
+  return typeof poseId === "string" && poseId.length >= 1 && poseId.length <= 32 && /^[a-zA-Z0-9_\-]+$/.test(poseId);
+}
+function isValidPoseForAvatar(avatarId, poseId) {
+  if (!isValidPoseIdFormat(poseId)) return false;
+  return getCharacterPoses(avatarId).some((p) => p.id === poseId);
+}
+
 // src/shared/quizLogic.ts
 function generateRoomCode(existingCodes) {
   if (existingCodes.size >= 9e3) {
@@ -77,6 +140,7 @@ function rankPlayers(players) {
     id: p.id,
     name: p.name,
     avatarId: p.avatarId,
+    ...p.poseId ? { poseId: p.poseId } : {},
     score: p.score,
     streak: p.streak,
     bestStreak: p.bestStreak,
@@ -189,10 +253,12 @@ var RoomManager = class {
       throw new Error("\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E40\u0E25\u0E48\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E49\u0E2D\u0E07");
     }
     const avatarId = isValidAvatarId(params.avatarId) ? params.avatarId : "char_01";
+    const poseId = isValidPoseForAvatar(avatarId, params.poseId) ? String(params.poseId) : DEFAULT_POSE_ID;
     if (params.playerId && room.players.has(params.playerId)) {
       const existing = room.players.get(params.playerId);
       existing.name = cleanName;
       existing.avatarId = avatarId;
+      existing.poseId = poseId;
       existing.connected = true;
       return { room, player: existing };
     }
@@ -204,6 +270,7 @@ var RoomManager = class {
       id: playerId,
       name: cleanName,
       avatarId,
+      poseId,
       score: 0,
       streak: 0,
       bestStreak: 0,
@@ -216,6 +283,23 @@ var RoomManager = class {
     };
     room.players.set(playerId, player);
     return { room, player };
+  }
+  updatePlayerPose(code, playerId, poseId) {
+    const room = this.rooms.get(code.trim());
+    if (!room) return false;
+    const player = room.players.get(playerId);
+    if (!player) return false;
+    player.poseId = isValidPoseForAvatar(player.avatarId, poseId) ? poseId : DEFAULT_POSE_ID;
+    return true;
+  }
+  kickPlayer(code, playerId) {
+    const room = this.rooms.get(code.trim());
+    if (!room) return false;
+    const deleted = room.players.delete(playerId);
+    if (deleted) {
+      room.answersThisQuestion.delete(playerId);
+    }
+    return deleted;
   }
   setPlayerConnected(code, playerId, connected) {
     const room = this.rooms.get(code);
@@ -744,6 +828,15 @@ function processClientMessage(msg, ctx, ws) {
       broadcastRoomState(ctx.roomCode);
       return null;
     }
+    case "host:kick": {
+      if (ctx.role !== "host" || !ctx.roomCode) return null;
+      const room = roomManager.getRoom(ctx.roomCode);
+      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (roomManager.kickPlayer(ctx.roomCode, msg.playerId)) {
+        broadcastRoomState(ctx.roomCode);
+      }
+      return null;
+    }
     case "player:check_room": {
       const status = roomManager.checkRoomStatus(msg.code);
       return {
@@ -756,6 +849,7 @@ function processClientMessage(msg, ctx, ws) {
         code: msg.code,
         name: msg.name,
         avatarId: msg.avatarId,
+        poseId: msg.poseId,
         playerId: msg.playerId
       });
       if (ws && ctx.roomCode && ctx.roomCode !== room.code) {
@@ -772,6 +866,13 @@ function processClientMessage(msg, ctx, ws) {
       };
       broadcastRoomState(room.code);
       return joinedReply;
+    }
+    case "player:pose": {
+      if (ctx.role !== "player" || !ctx.roomCode || !ctx.playerId) return null;
+      if (roomManager.updatePlayerPose(ctx.roomCode, ctx.playerId, msg.poseId)) {
+        broadcastRoomState(ctx.roomCode);
+      }
+      return null;
     }
     case "player:answer": {
       if (ctx.role !== "player" || !ctx.roomCode || !ctx.playerId) return null;

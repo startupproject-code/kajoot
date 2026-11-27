@@ -77,6 +77,7 @@ export interface PlayerPublic {
   id: string;
   name: string;
   avatarId: AvatarId;
+  poseId?: string;
   score: number;
   streak: number;
   bestStreak: number;
@@ -126,8 +127,10 @@ export type ClientMessage =
   | { type: 'host:next' }
   | { type: 'host:end' }
   | { type: 'host:restart'; quiz?: QuizSet }
+  | { type: 'host:kick'; playerId: string }
   | { type: 'player:check_room'; code: string }
-  | { type: 'player:join'; code: string; name: string; avatarId: AvatarId; playerId?: string }
+  | { type: 'player:join'; code: string; name: string; avatarId: AvatarId; poseId?: string; playerId?: string }
+  | { type: 'player:pose'; poseId: string }
   | { type: 'player:answer'; choice: AnswerIndex };
 
 export type ServerMessage =

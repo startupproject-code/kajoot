@@ -1,5 +1,6 @@
+import { isValidPoseForAvatar } from './characterPoses';
 import { isValidAvatarId, isValidRoomCode } from './quizLogic';
-import { AnswerIndex, MAX_PLAYERS_PER_ROOM, PublicQuestionView, QuizSet, RoomPhase } from './types';
+import { AnswerIndex, AvatarId, MAX_PLAYERS_PER_ROOM, PublicQuestionView, QuizSet, RoomPhase } from './types';
 
 // Constants synchronized verbatim with firebase-blueprint.json & firestore.rules
 export const FIREBASE_ID_PATTERN = /^[a-zA-Z0-9_\-]+$/;
@@ -12,6 +13,7 @@ export const MAX_OPTION_TEXT_LEN = 200;
 export const MAX_MEDIA_URL_LEN = 2048;
 export const MAX_IMAGE_DATA_URL_LEN = 700_000;
 export const MAX_PLAYER_NAME_LEN = 24;
+export const MAX_POSE_ID_LEN = 32;
 export const MAX_ANSWER_ID_LEN = 140;
 
 export function isValidFirebaseId(id: string): boolean {
@@ -126,6 +128,7 @@ export function validateRoomPlayerPayload(
     'hostUid',
     'name',
     'avatarId',
+    'poseId',
     'score',
     'streak',
     'bestStreak',
@@ -151,6 +154,9 @@ export function validateRoomPlayerPayload(
   }
   if (!isValidAvatarId(String(data.avatarId))) {
     return { ok: false, reason: 'Invalid avatar ID' };
+  }
+  if (data.poseId !== undefined && !isValidPoseForAvatar(data.avatarId as AvatarId, data.poseId)) {
+    return { ok: false, reason: 'Invalid character pose ID' };
   }
   if (ctx.isCreate) {
     if (ctx.totalPlayersInRoom >= MAX_PLAYERS_PER_ROOM) {

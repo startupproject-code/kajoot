@@ -1,3 +1,4 @@
+import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses';
 import {
   calculatePoints,
   generateRoomCode,
@@ -20,6 +21,7 @@ export interface InternalPlayer {
   id: string;
   name: string;
   avatarId: AvatarId;
+  poseId: string;
   score: number;
   streak: number;
   bestStreak: number;
@@ -156,6 +158,7 @@ export class RoomManager {
     code: string;
     name: string;
     avatarId: string;
+    poseId?: string;
     playerId?: string;
   }): { room: QuizRoom; player: InternalPlayer } {
     const cleanCode = params.code.trim();
@@ -170,11 +173,13 @@ export class RoomManager {
     }
 
     const avatarId: AvatarId = isValidAvatarId(params.avatarId) ? params.avatarId : 'char_01';
+    const poseId = isValidPoseForAvatar(avatarId, params.poseId) ? String(params.poseId) : DEFAULT_POSE_ID;
 
     if (params.playerId && room.players.has(params.playerId)) {
       const existing = room.players.get(params.playerId)!;
       existing.name = cleanName;
       existing.avatarId = avatarId;
+      existing.poseId = poseId;
       existing.connected = true;
       return { room, player: existing };
     }
@@ -188,6 +193,7 @@ export class RoomManager {
       id: playerId,
       name: cleanName,
       avatarId,
+      poseId,
       score: 0,
       streak: 0,
       bestStreak: 0,
@@ -201,6 +207,25 @@ export class RoomManager {
 
     room.players.set(playerId, player);
     return { room, player };
+  }
+
+  updatePlayerPose(code: string, playerId: string, poseId: string): boolean {
+    const room = this.rooms.get(code.trim());
+    if (!room) return false;
+    const player = room.players.get(playerId);
+    if (!player) return false;
+    player.poseId = isValidPoseForAvatar(player.avatarId, poseId) ? poseId : DEFAULT_POSE_ID;
+    return true;
+  }
+
+  kickPlayer(code: string, playerId: string): boolean {
+    const room = this.rooms.get(code.trim());
+    if (!room) return false;
+    const deleted = room.players.delete(playerId);
+    if (deleted) {
+      room.answersThisQuestion.delete(playerId);
+    }
+    return deleted;
   }
 
   setPlayerConnected(code: string, playerId: string, connected: boolean): void {

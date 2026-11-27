@@ -13,6 +13,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses';
 import { calculatePoints, generateRoomCode, isValidRoomCode, rankPlayers } from '../shared/quizLogic';
 import {
   buildPublicQuestionPayload,
@@ -86,6 +87,7 @@ export interface FirestorePlayerDoc {
   hostUid: string;
   name: string;
   avatarId: AvatarId;
+  poseId?: string;
   score: number;
   streak: number;
   bestStreak: number;
@@ -688,18 +690,48 @@ export async function checkFirebaseRoom(codeInput: string): Promise<{
   }
 }
 
+export async function hostKickFirebasePlayer(params: {
+  code: string;
+  playerId: string;
+  players: FirestorePlayerDoc[];
+  answeredCount?: number;
+  answerCounts?: [number, number, number, number];
+}): Promise<void> {
+  const { code, playerId, players } = params;
+  const remaining = players.filter((p) => p.id !== playerId);
+  const ranked = rankPlayers(remaining);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'rooms', code, 'players', playerId));
+  batch.update(doc(db, 'rooms', code), {
+    totalPlayers: Math.min(MAX_PLAYERS_PER_ROOM, ranked.length),
+    leaderboard: ranked.slice(0, MAX_PLAYERS_PER_ROOM),
+    ...(params.answeredCount !== undefined ? { answeredCount: params.answeredCount } : {}),
+    ...(params.answerCounts ? { answerCounts: params.answerCounts } : {}),
+    updatedAt: serverTimestamp(),
+  });
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `rooms/${code}/players/${playerId}`);
+  }
+}
+
 export async function joinFirebaseRoom(params: {
   code: string;
   hostUid: string;
   uid: string;
   name: string;
   avatarId: AvatarId;
+  poseId?: string;
 }): Promise<void> {
   const cleanName = sanitizePlayerName(params.name).slice(0, MAX_PLAYER_NAME_LEN);
   if (!cleanName) {
     throw new Error('กรุณากรอกชื่อผู้เล่นก่อนเข้าห้อง');
   }
 
+  const safePoseId = isValidPoseForAvatar(params.avatarId, params.poseId)
+    ? String(params.poseId)
+    : DEFAULT_POSE_ID;
   const playerPath = `rooms/${params.code}/players/${params.uid}`;
   const playerRef = doc(db, 'rooms', params.code, 'players', params.uid);
 
@@ -709,6 +741,7 @@ export async function joinFirebaseRoom(params: {
       await updateDoc(playerRef, {
         name: cleanName,
         avatarId: params.avatarId,
+        poseId: safePoseId,
         connected: true,
         updatedAt: serverTimestamp(),
       });
@@ -720,6 +753,7 @@ export async function joinFirebaseRoom(params: {
         hostUid: params.hostUid,
         name: cleanName,
         avatarId: params.avatarId,
+        poseId: safePoseId,
         score: 0,
         streak: 0,
         bestStreak: 0,
@@ -736,6 +770,26 @@ export async function joinFirebaseRoom(params: {
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, playerPath);
+  }
+}
+
+export async function updateFirebasePlayerPose(params: {
+  code: string;
+  uid: string;
+  avatarId: AvatarId;
+  poseId: string;
+}): Promise<void> {
+  const safePoseId = isValidPoseForAvatar(params.avatarId, params.poseId)
+    ? params.poseId
+    : DEFAULT_POSE_ID;
+  const playerPath = `rooms/${params.code}/players/${params.uid}`;
+  try {
+    await updateDoc(doc(db, 'rooms', params.code, 'players', params.uid), {
+      poseId: safePoseId,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, playerPath);
   }
 }
 

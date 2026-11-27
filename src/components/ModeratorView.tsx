@@ -25,6 +25,7 @@ import {
   Trophy,
   Upload,
   Users,
+  UserX,
   Video as VideoIcon,
   Volume2,
   VolumeX,
@@ -36,6 +37,7 @@ import {
   FirestoreAnswerDoc,
   FirestorePlayerDoc,
   FirestoreRoomDoc,
+  hostKickFirebasePlayer,
   hostRevealCurrentQuestion,
   hostStartOrAdvanceQuestion,
   hostTransitionPhase,
@@ -46,10 +48,12 @@ import {
   syncHostRoomStats,
 } from '../firebase/firebaseQuizService';
 import { DEFAULT_QUIZ, SAMPLE_CSV_TEMPLATE } from '../shared/defaultQuiz';
+import { resolvePlayerPoseImage } from '../shared/characterPoses';
 import {
   exportQuizToCsv,
   exportResultsToCsv,
   parseQuizCsv,
+  rankPlayers,
 } from '../shared/quizLogic';
 import {
   AnswerIndex,
@@ -69,6 +73,7 @@ import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { CountdownClock } from './CountdownClock';
 import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
+import { LobbyPoseStage } from './LobbyPoseStage';
 import { MediaStage } from './MediaStage';
 
 interface ModeratorViewProps {
@@ -187,6 +192,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [muted, setMuted] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [launchingRoom, setLaunchingRoom] = useState(false);
+  const [kickingPlayerId, setKickingPlayerId] = useState<string | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const lastSoundSecRef = useRef<number | null>(null);
@@ -264,15 +270,19 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   const roomState = useMemo(() => {
     if (!roomDoc) return null;
+    if (roomDoc.phase === 'LOBBY') {
+      const liveRanked = rankPlayers(playersDocs);
+      return roomDocToPublicState(roomDoc, nowMs, liveRanked);
+    }
     const base = roomDocToPublicState(roomDoc, nowMs);
     if (playersDocs.length > 0 || roomDoc.totalPlayers === 0) {
       return {
         ...base,
-        totalPlayers: Math.max(base.totalPlayers, playersDocs.length),
+        totalPlayers: playersDocs.length,
       };
     }
     return base;
-  }, [roomDoc, nowMs, playersDocs.length]);
+  }, [roomDoc, nowMs, playersDocs]);
 
   // Sync live players & answer counts to Firestore room doc
   useEffect(() => {
@@ -298,7 +308,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       roomDoc.phase === 'LOBBY' &&
       playersDocs.some((p) => {
         const inBoard = roomDoc.leaderboard.find((b) => b.id === p.id);
-        return !inBoard || inBoard.name !== p.name || inBoard.avatarId !== p.avatarId;
+        return (
+          !inBoard ||
+          inBoard.name !== p.name ||
+          inBoard.avatarId !== p.avatarId ||
+          (inBoard.poseId || 'default') !== (p.poseId || 'default')
+        );
       });
 
     if (!countsChanged && !playersChanged && !answeredChanged && !namesChanged) {
@@ -689,6 +704,25 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     }
   };
 
+  const handleKickLobbyPlayer = async (playerId: string) => {
+    if (!activeRoomCode || kickingPlayerId === playerId) return;
+    setKickingPlayerId(playerId);
+    setRoomError(null);
+    try {
+      await hostKickFirebasePlayer({
+        code: activeRoomCode,
+        playerId,
+        players: playersDocs,
+      });
+    } catch (err) {
+      setRoomError(
+        err instanceof Error ? err.message : 'ไม่สามารถนำผู้เล่นออกจากห้องได้'
+      );
+    } finally {
+      setKickingPlayerId((prev) => (prev === playerId ? null : prev));
+    }
+  };
+
   // =========================================================================
   // MODERATOR AUTHENTICATION GATE (ต้องเข้าสู่ระบบ Google / Gmail ก่อนใช้งาน)
   // =========================================================================
@@ -861,106 +895,161 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
           </div>
         )}
 
-        {/* PHASE: LOBBY */}
+        {/* PHASE: LOBBY — LEFT QR + COMPACT WAITING LIST WITH KICK + RIGHT POSE CARDS STAGE */}
         {roomState.phase === 'LOBBY' && (
-          <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            <section className="lg:col-span-5 rounded-3xl bg-slate-800/80 border border-slate-700 p-6 sm:p-7 space-y-6">
-              <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-indigo-300">
-                  สแกน QR Code หรือกรอกรหัสห้อง 4 หลักเพื่อเข้าร่วม
-                </p>
-                <div
-                  data-testid="host-room-code"
-                  className="font-mono tabular-nums text-6xl sm:text-7xl font-extrabold tracking-widest text-white py-2"
-                >
-                  {roomState.code}
-                </div>
-              </div>
-
-              <div className="flex justify-center">
-                {qrDataUrl ? (
-                  <div className="p-3 bg-white rounded-2xl shadow-lg">
-                    <img
-                      src={qrDataUrl}
-                      alt={`QR Code สำหรับเข้าห้อง ${roomState.code}`}
-                      className="w-52 h-52 sm:w-56 sm:h-56"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-52 h-52 rounded-2xl bg-slate-700 animate-pulse" />
-                )}
-              </div>
-
+          <main
+            data-testid="host-lobby-main"
+            className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-4 sm:py-5 grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch"
+          >
+            {/* Left Panel: QR Code + Room Code */}
+            <section
+              data-testid="host-lobby-qr-panel"
+              className="lg:col-span-3 rounded-3xl bg-slate-800/80 border border-slate-700 p-4 sm:p-5 flex flex-col justify-between gap-4"
+            >
               <div className="space-y-3">
-                <div className="text-xs text-slate-400 text-center break-all">{joinUrl}</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={copyJoinLink}
-                    className="min-h-[44px] rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+                <div className="text-center space-y-1">
+                  <p className="text-xs font-medium text-indigo-300">
+                    สแกน QR Code หรือกรอกรหัสห้อง 4 หลัก
+                  </p>
+                  <div
+                    data-testid="host-room-code"
+                    className="font-mono tabular-nums text-5xl xl:text-6xl font-extrabold tracking-widest text-white py-1"
                   >
-                    {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedLink ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="host-start-game"
-                    onClick={() => {
-                      soundFx.unlock();
-                      void hostStartOrAdvanceQuestion({
-                        code: activeRoomCode,
-                        quiz: activeLiveQuiz,
-                        questionIndex: 0,
-                        players: playersDocs,
-                      });
-                    }}
-                    className="min-h-[44px] rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-colors"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>เริ่มเกมเลย!</span>
-                  </button>
+                    {roomState.code}
+                  </div>
                 </div>
+
+                <div className="flex justify-center">
+                  {qrDataUrl ? (
+                    <div className="p-2.5 bg-white rounded-2xl shadow-lg">
+                      <img
+                        src={qrDataUrl}
+                        alt={`QR Code สำหรับเข้าห้อง ${roomState.code}`}
+                        className="w-44 h-44 xl:w-48 xl:h-48"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-44 h-44 xl:w-48 xl:h-48 rounded-2xl bg-slate-700 animate-pulse" />
+                  )}
+                </div>
+
+                <div className="text-[11px] text-slate-400 text-center break-all">
+                  {joinUrl}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={copyJoinLink}
+                  className="min-h-[44px] px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                >
+                  {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedLink ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="host-start-game"
+                  onClick={() => {
+                    soundFx.unlock();
+                    void hostStartOrAdvanceQuestion({
+                      code: activeRoomCode,
+                      quiz: activeLiveQuiz,
+                      questionIndex: 0,
+                      players: playersDocs,
+                    });
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/25 transition-colors whitespace-nowrap"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>เริ่มเกมเลย!</span>
+                </button>
               </div>
             </section>
 
-            <section className="lg:col-span-7 rounded-3xl bg-slate-800/60 border border-slate-700 p-6 sm:p-7">
-              <div className="flex items-center justify-between gap-4 mb-5">
-                <div className="flex items-center gap-2.5">
-                  <Users className="w-5 h-5 text-indigo-400" />
-                  <h2 className="text-xl font-bold text-white">ผู้เล่นในห้องรอคอย</h2>
+            {/* Middle Panel: Compact Waiting Player List with Kick Action */}
+            <section
+              data-testid="host-lobby-player-list"
+              className="lg:col-span-3 rounded-3xl bg-slate-800/60 border border-slate-700 p-4 sm:p-5 flex flex-col min-h-[320px] lg:min-h-[540px]"
+            >
+              <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Users className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <h2 className="text-base font-bold text-white truncate">
+                    ผู้เล่นในห้องรอคอย
+                  </h2>
                 </div>
                 <span
                   data-testid="host-player-count"
-                  className="font-mono tabular-nums text-sm font-bold text-indigo-300"
+                  className="font-mono tabular-nums text-xs font-bold text-indigo-300 shrink-0"
                 >
                   {roomState.totalPlayers} / {MAX_PLAYERS_PER_ROOM} คน
                 </span>
               </div>
 
               {roomState.players.length === 0 ? (
-                <div className="py-16 text-center space-y-2 border border-dashed border-slate-700 rounded-2xl">
-                  <p className="text-slate-300 font-semibold">กำลังรอผู้เล่นเข้าร่วมห้อง...</p>
-                  <p className="text-sm text-slate-400">
-                    ผู้เล่นสามารถเปิดกล้องมือถือสแกน QR Code หรือกรอกรหัส {roomState.code} เพื่อเลือกตัวละครและเข้าเล่น
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-3 py-10 border border-dashed border-slate-700 rounded-2xl space-y-1.5">
+                  <p className="text-sm text-slate-300 font-semibold">
+                    ยังไม่มีผู้เล่นในห้อง
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    รายชื่อจะปรากฏที่นี่ทันทีเมื่อมีผู้เล่นเข้าร่วม
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[440px] overflow-y-auto pr-1">
-                  {roomState.players.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-700"
-                    >
-                      <CuteAvatar avatarId={p.avatarId} size={38} />
-                      <span className="font-semibold text-sm text-white truncate">
-                        {p.name}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex-1 max-h-[460px] lg:max-h-[640px] overflow-y-auto space-y-2 pr-1">
+                  {roomState.players.map((p) => {
+                    const poseMeta = resolvePlayerPoseImage(p.avatarId, p.poseId);
+                    const isKicking = kickingPlayerId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        data-testid={`lobby-list-player-${p.id}`}
+                        className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-2xl bg-slate-900/80 border border-slate-700/80"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <CuteAvatar
+                            avatarId={p.avatarId}
+                            poseId={p.poseId}
+                            size={34}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-sm text-white truncate">
+                              {p.name}
+                            </div>
+                            {poseMeta.id !== 'default' && (
+                              <div className="text-[11px] text-indigo-300 truncate">
+                                {poseMeta.label}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`kick-player-${p.id}`}
+                          disabled={isKicking}
+                          onClick={() => void handleKickLobbyPlayer(p.id)}
+                          aria-label={`นำ ${p.name} ออกจากห้อง`}
+                          title="นำผู้เล่นออกจากห้อง"
+                          className="min-h-[36px] min-w-[36px] px-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/25 disabled:opacity-50 text-rose-300 inline-flex items-center justify-center shrink-0 transition-colors"
+                        >
+                          <UserX className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </section>
+
+            {/* Right Panel: Character Pose Cards Window */}
+            <div className="lg:col-span-6 min-w-0 flex">
+              <LobbyPoseStage
+                players={roomState.players}
+                roomCode={roomState.code}
+              />
+            </div>
           </main>
         )}
 

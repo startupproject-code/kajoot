@@ -50,6 +50,7 @@ export function rankPlayers<
     id: string;
     name: string;
     avatarId: AvatarId;
+    poseId?: string;
     score: number;
     streak: number;
     bestStreak: number;
@@ -72,6 +73,7 @@ export function rankPlayers<
     id: p.id,
     name: p.name,
     avatarId: p.avatarId,
+    ...(p.poseId ? { poseId: p.poseId } : {}),
     score: p.score,
     streak: p.streak,
     bestStreak: p.bestStreak,

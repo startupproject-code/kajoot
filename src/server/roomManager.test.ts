@@ -75,3 +75,24 @@ test('RoomManager runs full quiz lifecycle, hides correctIndex during QUESTION, 
   manager.endGame(room.code);
   assert.equal(room.phase, 'ENDED');
 });
+
+test('RoomManager updates player poseId and kicks absent players cleanly', () => {
+  const manager = new RoomManager();
+  const room = manager.createRoom(DEFAULT_QUIZ, 1000);
+
+  const p1 = manager.joinPlayer({ code: room.code, name: 'กัปตัน', avatarId: 'char_05' });
+  assert.equal(p1.player.poseId, 'default');
+
+  assert.equal(manager.updatePlayerPose(room.code, p1.player.id, 'pose_3'), true);
+  assert.equal(manager.toPublicState(room, true).players[0].poseId, 'pose_3');
+
+  // Invalid pose for character falls back safely to default
+  assert.equal(manager.updatePlayerPose(room.code, p1.player.id, 'invalid_pose'), true);
+  assert.equal(manager.toPublicState(room, true).players[0].poseId, 'default');
+
+  // Kick player removes player from room
+  assert.equal(manager.kickPlayer(room.code, p1.player.id), true);
+  assert.equal(room.players.size, 0);
+  assert.equal(manager.kickPlayer(room.code, p1.player.id), false);
+});
+
