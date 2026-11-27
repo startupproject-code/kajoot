@@ -968,11 +968,23 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         {(roomState.phase === 'QUESTION' || roomState.phase === 'REVEAL') && q && (
           <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col justify-between gap-3">
             <div className="shrink-0 flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="text-sm font-semibold text-indigo-300">
+              <div className="space-y-0.5 transition-all duration-300">
+                <div
+                  className={`font-bold text-indigo-300 transition-all duration-300 ${
+                    roomState.phase === 'REVEAL'
+                      ? 'text-sm sm:text-lg'
+                      : 'text-base sm:text-xl lg:text-2xl'
+                  }`}
+                >
                   คำถามข้อที่ {roomState.currentQuestionIndex + 1} จาก {roomState.totalQuestions}
                 </div>
-                <div className="text-sm text-slate-300 font-mono tabular-nums">
+                <div
+                  className={`font-mono tabular-nums transition-all duration-300 ${
+                    roomState.phase === 'REVEAL'
+                      ? 'text-base sm:text-xl font-bold text-slate-200'
+                      : 'text-lg sm:text-2xl lg:text-[1.75rem] font-extrabold text-white'
+                  }`}
+                >
                   ส่งคำตอบแล้ว {roomState.answeredCount} / {roomState.totalPlayers} คน
                 </div>
               </div>
@@ -989,18 +1001,31 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             >
               <div
                 className={`${
-                  roomState.phase === 'REVEAL' ? 'md:col-span-7' : ''
-                } min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/80 border border-slate-700 px-5 py-3.5 flex flex-col items-center justify-center text-center gap-2 overflow-hidden`}
+                  roomState.phase === 'REVEAL'
+                    ? 'md:col-span-7 items-center md:items-start text-center md:text-left px-5 sm:px-6 py-3'
+                    : 'items-center text-center px-5 sm:px-8 py-4'
+                } min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/80 border border-slate-700 flex flex-col justify-center gap-2.5 overflow-hidden transition-all duration-300`}
               >
-                <h2 className="shrink-0 text-xl sm:text-2xl lg:text-3xl font-extrabold text-white leading-snug text-balance">
+                <h2
+                  className={`shrink-0 font-extrabold text-white text-balance transition-all duration-300 ${
+                    roomState.phase === 'REVEAL'
+                      ? 'text-lg sm:text-xl lg:text-2xl leading-snug'
+                      : 'text-2xl sm:text-3xl lg:text-4xl xl:text-[2.6rem] leading-tight'
+                  }`}
+                >
                   {q.text}
                 </h2>
-                <MediaStage imageUrl={q.imageUrl} videoUrl={q.videoUrl} hostFit={true} />
+                <MediaStage
+                  imageUrl={q.imageUrl}
+                  videoUrl={q.videoUrl}
+                  hostPhase={roomState.phase === 'REVEAL' ? 'REVEAL' : 'QUESTION'}
+                  align={roomState.phase === 'REVEAL' ? 'left' : 'center'}
+                />
               </div>
 
               {roomState.phase === 'REVEAL' && (
                 <div className="md:col-span-5 min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/70 border border-slate-700 p-4 flex flex-col justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-bold text-slate-200 shrink-0">
+                  <div className="flex items-center gap-2 text-sm sm:text-base font-bold text-slate-200 shrink-0">
                     <BarChart3 className="w-4 h-4 text-indigo-400" />
                     <span>สถิติการตอบของผู้เล่นในข้อนี้</span>
                   </div>

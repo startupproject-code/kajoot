@@ -29,7 +29,7 @@ import {
 } from '../shared/types';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
-import { AvatarCarousel } from './AvatarCarousel';
+import { AvatarPicker } from './AvatarPicker';
 import { CountdownClock } from './CountdownClock';
 import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
@@ -418,12 +418,12 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               />
             </div>
 
-            {/* Centered Horizontal Scrollable Avatar Picker */}
+            {/* 4-Column Vertically Scrollable Avatar Picker */}
             <div className="space-y-1.5">
               <span className="block text-xs font-bold text-slate-600 text-center">
-                เลื่อนซ้าย-ขวาเพื่อเลือกน้องตัวละคร ({AVATARS.length} แบบ)
+                เลือกตัวละครของคุณ ({AVATARS.length} แบบ · เลื่อนขึ้น-ลงได้)
               </span>
-              <AvatarCarousel value={avatarId} onChange={setAvatarId} />
+              <AvatarPicker value={avatarId} onChange={setAvatarId} />
             </div>
 
             <button
