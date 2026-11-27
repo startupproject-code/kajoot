@@ -71,7 +71,7 @@ test('rankPlayers orders by score, correctCount, and assigns ranks', () => {
     {
       id: 'p1',
       name: 'บี',
-      avatarId: 'cat',
+      avatarId: 'char_01',
       score: 1200,
       streak: 1,
       bestStreak: 1,
@@ -85,7 +85,7 @@ test('rankPlayers orders by score, correctCount, and assigns ranks', () => {
     {
       id: 'p2',
       name: 'เอ',
-      avatarId: 'dog',
+      avatarId: 'char_02',
       score: 1850,
       streak: 2,
       bestStreak: 2,

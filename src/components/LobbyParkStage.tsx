@@ -176,7 +176,6 @@ export const LobbyParkStage: React.FC<LobbyParkStageProps> = ({
         {/* Live Animated Player Characters */}
         {sortedActors.map((actor) => {
           const meta = AVATARS.find((a) => a.id === actor.avatarId) ?? AVATARS[0];
-          const isCharacter = meta.category === 'character';
           const isHighlighted = highlightedPlayerId === actor.id;
           // Depth scale: back lawn (62%) -> 0.78x, front lawn (89%) -> 1.08x
           const depthScale = 0.78 + ((actor.y - 62) / (89 - 62)) * 0.3;
@@ -251,27 +250,18 @@ export const LobbyParkStage: React.FC<LobbyParkStageProps> = ({
                       transition: 'transform 140ms ease',
                     }}
                   >
-                    {isCharacter ? (
+                    <div
+                      className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md ${meta.bgClass} ${
+                        isSittingStill ? 'translate-y-1.5' : ''
+                      }`}
+                    >
                       <img
                         src={meta.imagePath}
                         alt={actor.name}
                         draggable={false}
-                        className={`w-14 h-14 sm:w-16 sm:h-16 md:w-[72px] md:h-[72px] object-contain drop-shadow-[0_3px_4px_rgba(0,0,0,0.35)] ${
-                          isSittingStill ? 'translate-y-1.5' : ''
-                        }`}
+                        className="w-full h-full object-cover object-top"
                       />
-                    ) : (
-                      <div
-                        className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full overflow-hidden border-2 border-white shadow-md ${meta.bgClass}`}
-                      >
-                        <img
-                          src={meta.imagePath}
-                          alt={actor.name}
-                          draggable={false}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
 

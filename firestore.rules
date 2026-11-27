@@ -45,13 +45,10 @@ service cloud.firestore {
 
     function isValidAvatar(avatarId) {
       return avatarId is string && avatarId.size() >= 2 && avatarId.size() <= 20 && avatarId in [
-        'kid_01', 'kid_02', 'kid_03', 'kid_04', 'kid_05',
-        'kid_06', 'kid_07', 'kid_08', 'kid_09', 'kid_10',
-        'kid_11', 'kid_12', 'kid_13', 'kid_14', 'kid_15',
-        'kid_16', 'kid_17', 'kid_18', 'kid_19', 'kid_20',
-        'cat', 'chicken', 'cow', 'deer', 'dog', 'crocodile', 'elephant',
-        'fox', 'giraffe', 'hippo', 'panda', 'penguin', 'pig', 'polar',
-        'otter', 'frog', 'lion', 'snake', 'tiger'
+        'char_01', 'char_02', 'char_03', 'char_04', 'char_05',
+        'char_06', 'char_07', 'char_08', 'char_09', 'char_10',
+        'char_11', 'char_12', 'char_13', 'char_14', 'char_15',
+        'char_16', 'char_17', 'char_18', 'char_19'
       ];
     }
 

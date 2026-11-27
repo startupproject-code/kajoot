@@ -12,7 +12,7 @@ test('RoomManager supports up to 200 players and rejects the 201st player', () =
     const joined = manager.joinPlayer({
       code: room.code,
       name: `ผู้เล่น ${i}`,
-      avatarId: 'dog',
+      avatarId: 'char_01',
     });
     assert.ok(joined.player.id);
   }
@@ -26,7 +26,7 @@ test('RoomManager supports up to 200 players and rejects the 201st player', () =
       manager.joinPlayer({
         code: room.code,
         name: 'คนที่ 201',
-        avatarId: 'cat',
+        avatarId: 'char_02',
       }),
     /200/
   );
@@ -36,8 +36,8 @@ test('RoomManager runs full quiz lifecycle, hides correctIndex during QUESTION, 
   const manager = new RoomManager();
   const room = manager.createRoom(DEFAULT_QUIZ, 1000);
 
-  const p1 = manager.joinPlayer({ code: room.code, name: 'มิ้นท์', avatarId: 'cat' });
-  const p2 = manager.joinPlayer({ code: room.code, name: 'ต้นกล้า', avatarId: 'panda' });
+  const p1 = manager.joinPlayer({ code: room.code, name: 'มิ้นท์', avatarId: 'char_01' });
+  const p2 = manager.joinPlayer({ code: room.code, name: 'ต้นกล้า', avatarId: 'char_03' });
 
   manager.startGame(room.code, 2000);
   assert.equal(room.phase, 'QUESTION');

@@ -28,8 +28,8 @@ function makePlayer(id: string, name: string, avatarId: PlayerPublic['avatarId']
 
 test('syncParkActors spawns actors inside playable lawn bounds and removes departed players', () => {
   const players = [
-    makePlayer('p1', 'ต้นกล้า', 'kid_01'),
-    makePlayer('p2', 'มะลิ', 'kid_02'),
+    makePlayer('p1', 'ต้นกล้า', 'char_01'),
+    makePlayer('p2', 'มะลิ', 'char_02'),
   ];
   const actors = syncParkActors([], players, 45, 1000, () => 0.5);
   assert.equal(actors.length, 2);
@@ -46,8 +46,8 @@ test('syncParkActors spawns actors inside playable lawn bounds and removes depar
 
 test('stepParkActors moves walking/running actors within bounds and triggerParkReaction updates actions', () => {
   const players = [
-    makePlayer('p1', 'เอ', 'kid_03'),
-    makePlayer('p2', 'บี', 'cat'),
+    makePlayer('p1', 'เอ', 'char_03'),
+    makePlayer('p2', 'บี', 'char_04'),
   ];
   let actors = syncParkActors([], players, 45, 1000, () => 0.4);
   actors = triggerParkReaction(actors, 'all', 'run', 1200, () => 0.8);

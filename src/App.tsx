@@ -197,7 +197,7 @@ function AppContent() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
             <div>
               <h2 className="text-xl font-extrabold text-slate-900">
-                เลือกน้องตัวละครคู่ใจไปโชว์บนตารางจัดอันดับ
+                เลือกตัวละครคู่ใจไปโชว์บนตารางจัดอันดับ
               </h2>
               <p className="text-sm text-slate-500">
                 ผู้เล่นทุกคนสามารถเลือกตัวละครน่ารักก่อนเข้าห้องรอคอย เพื่อแสดงตัวตนบนแท่นผู้ชนะหลังจบเกม

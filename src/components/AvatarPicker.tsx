@@ -45,7 +45,7 @@ export const AvatarPicker: React.FC<AvatarPickerProps> = ({ value, onChange }) =
                   src={av.imagePath}
                   alt={av.name}
                   draggable={false}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover object-top"
                 />
                 {isActive && (
                   <span
@@ -68,7 +68,7 @@ export const AvatarPicker: React.FC<AvatarPickerProps> = ({ value, onChange }) =
             src={activeMeta.imagePath}
             alt=""
             aria-hidden="true"
-            className="w-6 h-6 rounded-lg object-cover border border-slate-200 shrink-0"
+            className="w-6 h-6 rounded-lg object-cover object-top border border-slate-200 shrink-0"
           />
           <span className="font-bold text-slate-900 truncate" data-testid="selected-avatar-name">
             {activeMeta.name}

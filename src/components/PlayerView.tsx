@@ -53,7 +53,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [verifiedHostUid, setVerifiedHostUid] = useState('');
   const [verifiedQuizTitle, setVerifiedQuizTitle] = useState('');
   const [playerName, setPlayerName] = useState('');
-  const [avatarId, setAvatarId] = useState<AvatarId>('cat');
+  const [avatarId, setAvatarId] = useState<AvatarId>('char_01');
 
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [selfPlayerDoc, setSelfPlayerDoc] = useState<FirestorePlayerDoc | null>(null);

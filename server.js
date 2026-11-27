@@ -8,25 +8,25 @@ import { WebSocketServer, WebSocket } from "ws";
 // src/shared/types.ts
 var MAX_PLAYERS_PER_ROOM = 200;
 var AVATARS = [
-  { id: "cat", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E21\u0E27", imagePath: "/assets/aistudio/Cat_4ef2f009.png", bgClass: "bg-amber-100", accentHex: "#F59E0B" },
-  { id: "dog", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E32", imagePath: "/assets/aistudio/Dog_090d167a.png", bgClass: "bg-yellow-100", accentHex: "#EAB308" },
-  { id: "panda", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E1E\u0E19\u0E14\u0E49\u0E32", imagePath: "/assets/aistudio/Panda_66a51023.png", bgClass: "bg-emerald-100", accentHex: "#10B981" },
-  { id: "fox", name: "\u0E19\u0E49\u0E2D\u0E07\u0E08\u0E34\u0E49\u0E07\u0E08\u0E2D\u0E01", imagePath: "/assets/aistudio/Fox_3b228377.png", bgClass: "bg-orange-100", accentHex: "#EA580C" },
-  { id: "chicken", name: "\u0E19\u0E49\u0E2D\u0E07\u0E44\u0E01\u0E48", imagePath: "/assets/aistudio/Chicken_bb74afc6.png", bgClass: "bg-amber-100", accentHex: "#D97706" },
-  { id: "cow", name: "\u0E19\u0E49\u0E2D\u0E07\u0E27\u0E31\u0E27", imagePath: "/assets/aistudio/Cow_55e35484.png", bgClass: "bg-lime-100", accentHex: "#65A30D" },
-  { id: "deer", name: "\u0E19\u0E49\u0E2D\u0E07\u0E01\u0E27\u0E32\u0E07", imagePath: "/assets/aistudio/Deer_7839724b.png", bgClass: "bg-emerald-100", accentHex: "#059669" },
-  { id: "crocodile", name: "\u0E19\u0E49\u0E2D\u0E07\u0E08\u0E23\u0E30\u0E40\u0E02\u0E49", imagePath: "/assets/aistudio/Crocodile_84f9a948.png", bgClass: "bg-teal-100", accentHex: "#0D9488" },
-  { id: "elephant", name: "\u0E19\u0E49\u0E2D\u0E07\u0E0A\u0E49\u0E32\u0E07", imagePath: "/assets/aistudio/Elephant_51aa857c.png", bgClass: "bg-amber-100", accentHex: "#F59E0B" },
-  { id: "giraffe", name: "\u0E19\u0E49\u0E2D\u0E07\u0E22\u0E35\u0E23\u0E32\u0E1F", imagePath: "/assets/aistudio/Girafft_aecae44c.png", bgClass: "bg-yellow-100", accentHex: "#CA8A04" },
-  { id: "hippo", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E34\u0E1B\u0E42\u0E1B", imagePath: "/assets/aistudio/Hippo_5c6b796a.png", bgClass: "bg-sky-100", accentHex: "#0284C7" },
-  { id: "penguin", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E1E\u0E19\u0E01\u0E27\u0E34\u0E19", imagePath: "/assets/aistudio/Penguin_5318f8f5.png", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
-  { id: "pig", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E39", imagePath: "/assets/aistudio/Pig_4a4b2a49.png", bgClass: "bg-pink-100", accentHex: "#EC4899" },
-  { id: "polar", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E35\u0E02\u0E32\u0E27", imagePath: "/assets/aistudio/Polar_870da263.png", bgClass: "bg-cyan-100", accentHex: "#06B6D4" },
-  { id: "otter", name: "\u0E19\u0E49\u0E2D\u0E07\u0E19\u0E32\u0E01", imagePath: "/assets/aistudio/Otter_b4845cc0.png", bgClass: "bg-sky-100", accentHex: "#0284C7" },
-  { id: "frog", name: "\u0E19\u0E49\u0E2D\u0E07\u0E01\u0E1A", imagePath: "/assets/aistudio/Frog_d4d1334a.png", bgClass: "bg-green-100", accentHex: "#16A34A" },
-  { id: "lion", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2A\u0E34\u0E07\u0E42\u0E15", imagePath: "/assets/aistudio/Lion_d7cf4d56.png", bgClass: "bg-amber-100", accentHex: "#D97706" },
-  { id: "snake", name: "\u0E19\u0E49\u0E2D\u0E07\u0E07\u0E39", imagePath: "/assets/aistudio/Snake_a97297a1.png", bgClass: "bg-lime-100", accentHex: "#65A30D" },
-  { id: "tiger", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E2D", imagePath: "/assets/aistudio/Tiger_de37bd62.png", bgClass: "bg-orange-100", accentHex: "#EA580C" }
+  { id: "char_01", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/1_d7a74ebc.jpg", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
+  { id: "char_02", name: "\u0E19\u0E49\u0E2D\u0E07\u0E42\u0E1A\u0E27\u0E4C\u0E0A\u0E21\u0E1E\u0E39", imagePath: "/assets/aistudio/2_0db288ca.jpg", bgClass: "bg-sky-100", accentHex: "#EC4899" },
+  { id: "char_03", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/3_43852fcc.jpg", bgClass: "bg-orange-100", accentHex: "#F97316" },
+  { id: "char_04", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E14\u0E32\u0E27\u0E21\u0E48\u0E27\u0E07", imagePath: "/assets/aistudio/4_ea160a01.jpg", bgClass: "bg-purple-100", accentHex: "#A855F7" },
+  { id: "char_05", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E41\u0E01\u0E4A\u0E1B\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/5_4381ac4c.jpg", bgClass: "bg-emerald-100", accentHex: "#10B981" },
+  { id: "char_06", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2D\u0E35\u0E4A\u0E22\u0E21\u0E22\u0E35\u0E19\u0E2A\u0E4C", imagePath: "/assets/aistudio/6_feb3a696.jpg", bgClass: "bg-pink-100", accentHex: "#EC4899" },
+  { id: "char_07", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E21\u0E15\u0E31\u0E49\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/7_65e65de4.jpg", bgClass: "bg-blue-100", accentHex: "#3B82F6" },
+  { id: "char_08", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E42\u0E1B\u0E42\u0E25\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/8_f6576340.jpg", bgClass: "bg-cyan-100", accentHex: "#06B6D4" },
+  { id: "char_09", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E35\u0E22\u0E0A\u0E38\u0E14\u0E41\u0E14\u0E07", imagePath: "/assets/aistudio/9_0eac9d0a.jpg", bgClass: "bg-rose-100", accentHex: "#F43F5E" },
+  { id: "char_10", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E39\u0E1F\u0E31\u0E07\u0E40\u0E17\u0E48", imagePath: "/assets/aistudio/10_20cce168.jpg", bgClass: "bg-slate-200", accentHex: "#64748B" },
+  { id: "char_11", name: "\u0E19\u0E49\u0E2D\u0E07\u0E44\u0E2B\u0E21\u0E1E\u0E23\u0E21\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/11_def2bfdc.jpg", bgClass: "bg-yellow-100", accentHex: "#EAB308" },
+  { id: "char_12", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E41\u0E14\u0E07\u0E40\u0E02\u0E49\u0E21", imagePath: "/assets/aistudio/12_19d1dc9a.jpg", bgClass: "bg-sky-100", accentHex: "#E11D48" },
+  { id: "char_13", name: "\u0E19\u0E49\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E42\u0E1B\u0E23\u0E07\u0E02\u0E32\u0E27", imagePath: "/assets/aistudio/13_8c7ac19c.jpg", bgClass: "bg-pink-100", accentHex: "#EC4899" },
+  { id: "char_14", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E0A\u0E38\u0E14\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/aistudio/14_7a8344ae.jpg", bgClass: "bg-emerald-100", accentHex: "#10B981" },
+  { id: "char_15", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2E\u0E39\u0E49\u0E14\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E07", imagePath: "/assets/aistudio/15_18a93aa2.jpg", bgClass: "bg-emerald-100", accentHex: "#F59E0B" },
+  { id: "char_16", name: "\u0E19\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1F\u0E49\u0E32", imagePath: "/assets/aistudio/16_42a4af2c.jpg", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
+  { id: "char_17", name: "\u0E19\u0E49\u0E2D\u0E07\u0E21\u0E31\u0E14\u0E08\u0E38\u0E01\u0E04\u0E39\u0E48", imagePath: "/assets/aistudio/17_634da5f8.jpg", bgClass: "bg-amber-100", accentHex: "#8B5CF6" },
+  { id: "char_18", name: "\u0E19\u0E49\u0E2D\u0E07\u0E2B\u0E21\u0E27\u0E01\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/18_e19f7f1c.jpg", bgClass: "bg-indigo-100", accentHex: "#EA580C" },
+  { id: "char_19", name: "\u0E19\u0E49\u0E2D\u0E07\u0E1C\u0E49\u0E32\u0E04\u0E32\u0E14\u0E2B\u0E31\u0E27\u0E2A\u0E49\u0E21", imagePath: "/assets/aistudio/20_a8878a73.jpg", bgClass: "bg-pink-100", accentHex: "#F97316" }
 ];
 
 // src/shared/quizLogic.ts
@@ -188,7 +188,7 @@ var RoomManager = class {
     if (!cleanName) {
       throw new Error("\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E40\u0E25\u0E48\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E49\u0E2D\u0E07");
     }
-    const avatarId = isValidAvatarId(params.avatarId) ? params.avatarId : "dog";
+    const avatarId = isValidAvatarId(params.avatarId) ? params.avatarId : "char_01";
     if (params.playerId && room.players.has(params.playerId)) {
       const existing = room.players.get(params.playerId);
       existing.name = cleanName;

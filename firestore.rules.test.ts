@@ -75,7 +75,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Alice',
-        avatarId: 'cat',
+        avatarId: 'char_01',
         score: 0,
         streak: 0,
         bestStreak: 0,
@@ -101,7 +101,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Cheater',
-        avatarId: 'fox',
+        avatarId: 'char_02',
         score: 99999,
         streak: 5,
         bestStreak: 5,
@@ -190,7 +190,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Late',
-        avatarId: 'cat',
+        avatarId: 'char_01',
         score: 0,
         streak: 0,
         bestStreak: 0,
@@ -249,16 +249,18 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.match(rulesText, /data\.coverImageUrl\.size\(\) <= 700000/);
   });
 
-  it('allows all 39 avatars (20 character avatars + 19 animal avatars) in rules and validation', async () => {
+  it('allows all 19 newly uploaded character avatars and rejects removed old avatars', async () => {
     const { AVATARS } = await import('./src/shared/types');
     const { isValidAvatarId } = await import('./src/shared/quizLogic');
     const prodRules = fs.readFileSync('firestore.rules', 'utf8');
 
-    assert.equal(AVATARS.length, 39);
+    assert.equal(AVATARS.length, 19);
     for (const av of AVATARS) {
       assert.equal(isValidAvatarId(av.id), true, `Expected isValidAvatarId(${av.id}) to be true`);
       assert.match(rulesText, new RegExp(`'${av.id}'`), `Expected ${av.id} in DRAFT_firestore.rules`);
       assert.match(prodRules, new RegExp(`'${av.id}'`), `Expected ${av.id} in firestore.rules`);
     }
+    assert.equal(isValidAvatarId('cat'), false);
+    assert.equal(isValidAvatarId('kid_01'), false);
   });
 });

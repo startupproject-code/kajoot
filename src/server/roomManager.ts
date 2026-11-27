@@ -169,7 +169,7 @@ export class RoomManager {
       throw new Error('กรุณากรอกชื่อผู้เล่นก่อนเข้าห้อง');
     }
 
-    const avatarId: AvatarId = isValidAvatarId(params.avatarId) ? params.avatarId : 'dog';
+    const avatarId: AvatarId = isValidAvatarId(params.avatarId) ? params.avatarId : 'char_01';
 
     if (params.playerId && room.players.has(params.playerId)) {
       const existing = room.players.get(params.playerId)!;
