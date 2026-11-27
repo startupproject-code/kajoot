@@ -10,26 +10,44 @@ import {
 } from './podiumAssets';
 
 describe('podiumAssets', () => {
-  it('stores optimized .webp stage and char_12 winner assets on disk', () => {
+  it('stores optimized .webp stage and all registered winner assets on disk', () => {
     assert.equal(FIREWORKS_DURATION_MS, 5000);
     assert.match(PODIUM_STAGE_IMAGE, /\.webp$/);
     assert.equal(fs.existsSync(`public${PODIUM_STAGE_IMAGE}`), true);
 
-    const char12Path = PODIUM_WINNER_ASSETS.char_12;
-    assert.ok(char12Path);
-    assert.match(char12Path, /\.webp$/);
-    assert.equal(fs.existsSync(`public${char12Path}`), true);
+    const expectedIds = [
+      'char_03',
+      'char_04',
+      'char_05',
+      'char_06',
+      'char_07',
+      'char_08',
+      'char_09',
+      'char_10',
+      'char_11',
+      'char_12',
+    ] as const;
+
+    assert.equal(Object.keys(PODIUM_WINNER_ASSETS).length, expectedIds.length);
+    for (const id of expectedIds) {
+      const assetPath = PODIUM_WINNER_ASSETS[id];
+      assert.ok(assetPath, `Missing winner asset for ${id}`);
+      assert.match(assetPath, /\.webp$/);
+      assert.equal(fs.existsSync(`public${assetPath}`), true, `Missing file public${assetPath}`);
+    }
   });
 
-  it('uses dedicated trophy asset only when char_12 is 1st place and falls back safely for all avatars', () => {
-    const char12First = resolvePodiumCharacterAsset('char_12', 1);
-    assert.equal(char12First.isFullBodyWinner, true);
-    assert.equal(char12First.imagePath, '/assets/podium/winners/char_12.webp');
+  it('uses dedicated trophy asset for registered characters in 1st place and falls back safely for all avatars', () => {
+    for (const [id, expectedPath] of Object.entries(PODIUM_WINNER_ASSETS)) {
+      const first = resolvePodiumCharacterAsset(id as typeof AVATARS[number]['id'], 1);
+      assert.equal(first.isFullBodyWinner, true);
+      assert.equal(first.imagePath, expectedPath);
 
-    const char12Second = resolvePodiumCharacterAsset('char_12', 2);
-    assert.equal(char12Second.isFullBodyWinner, false);
-    assert.match(char12Second.imagePath, /\.webp$/);
-    assert.equal(fs.existsSync(`public${char12Second.imagePath}`), true);
+      const second = resolvePodiumCharacterAsset(id as typeof AVATARS[number]['id'], 2);
+      assert.equal(second.isFullBodyWinner, false);
+      assert.match(second.imagePath, /\.webp$/);
+      assert.equal(fs.existsSync(`public${second.imagePath}`), true);
+    }
 
     for (const av of AVATARS) {
       for (const place of [1, 2, 3] as const) {
