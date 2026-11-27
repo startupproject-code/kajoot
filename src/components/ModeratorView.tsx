@@ -69,7 +69,6 @@ import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { CountdownClock } from './CountdownClock';
 import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
-import { LobbyParkStage } from './LobbyParkStage';
 import { MediaStage } from './MediaStage';
 
 interface ModeratorViewProps {
@@ -188,7 +187,6 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [muted, setMuted] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [launchingRoom, setLaunchingRoom] = useState(false);
-  const [highlightedParkPlayerId, setHighlightedParkPlayerId] = useState<string | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const lastSoundSecRef = useRef<number | null>(null);
@@ -865,134 +863,103 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
         {/* PHASE: LOBBY */}
         {roomState.phase === 'LOBBY' && (
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            {/* Left Sidebar: QR Code + Start Game + Joined Players Roster */}
-            <aside className="lg:col-span-4 space-y-4">
-              <section className="rounded-3xl bg-slate-800/80 border border-slate-700 p-5 space-y-4">
-                <div className="text-center space-y-1">
-                  <p className="text-xs sm:text-sm font-medium text-indigo-300">
-                    สแกน QR Code หรือกรอกรหัสห้อง 4 หลักเพื่อเข้าร่วม
-                  </p>
-                  <div
-                    data-testid="host-room-code"
-                    className="font-mono tabular-nums text-5xl sm:text-6xl font-extrabold tracking-widest text-white py-1"
-                  >
-                    {roomState.code}
-                  </div>
+          <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <section className="lg:col-span-5 rounded-3xl bg-slate-800/80 border border-slate-700 p-6 sm:p-7 space-y-6">
+              <div className="text-center space-y-2">
+                <p className="text-sm font-medium text-indigo-300">
+                  สแกน QR Code หรือกรอกรหัสห้อง 4 หลักเพื่อเข้าร่วม
+                </p>
+                <div
+                  data-testid="host-room-code"
+                  className="font-mono tabular-nums text-6xl sm:text-7xl font-extrabold tracking-widest text-white py-2"
+                >
+                  {roomState.code}
                 </div>
+              </div>
 
-                <div className="flex justify-center">
-                  {qrDataUrl ? (
-                    <div className="p-2.5 bg-white rounded-2xl shadow-lg">
-                      <img
-                        src={qrDataUrl}
-                        alt={`QR Code สำหรับเข้าห้อง ${roomState.code}`}
-                        className="w-40 h-40 sm:w-44 sm:h-44"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-40 h-40 rounded-2xl bg-slate-700 animate-pulse" />
-                  )}
-                </div>
-
-                <div className="space-y-2.5">
-                  <div className="text-[11px] text-slate-400 text-center break-all">{joinUrl}</div>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={copyJoinLink}
-                      className="min-h-[42px] rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
-                    >
-                      {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedLink ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      data-testid="host-start-game"
-                      onClick={() => {
-                        soundFx.unlock();
-                        void hostStartOrAdvanceQuestion({
-                          code: activeRoomCode,
-                          quiz: activeLiveQuiz,
-                          questionIndex: 0,
-                          players: playersDocs,
-                        });
-                      }}
-                      className="min-h-[42px] rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/25 transition-colors whitespace-nowrap"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>เริ่มเกมเลย!</span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              {/* Joined Players List */}
-              <section className="rounded-3xl bg-slate-800/60 border border-slate-700 p-4 sm:p-5">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Users className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <h2 className="text-sm sm:text-base font-bold text-white truncate">
-                      รายชื่อผู้เล่นที่เข้าห้องมาแล้ว
-                    </h2>
-                  </div>
-                  <span
-                    data-testid="host-player-count"
-                    className="font-mono tabular-nums text-xs sm:text-sm font-bold text-indigo-300 shrink-0"
-                  >
-                    {roomState.totalPlayers} / {MAX_PLAYERS_PER_ROOM} คน
-                  </span>
-                </div>
-
-                {roomState.players.length === 0 ? (
-                  <div className="py-5 px-3 text-center border border-dashed border-slate-700 rounded-2xl">
-                    <p className="text-xs sm:text-sm text-slate-400">
-                      ยังไม่มีผู้เล่นเข้าห้องในขณะนี้
-                    </p>
+              <div className="flex justify-center">
+                {qrDataUrl ? (
+                  <div className="p-3 bg-white rounded-2xl shadow-lg">
+                    <img
+                      src={qrDataUrl}
+                      alt={`QR Code สำหรับเข้าห้อง ${roomState.code}`}
+                      className="w-52 h-52 sm:w-56 sm:h-56"
+                    />
                   </div>
                 ) : (
-                  <div
-                    data-testid="host-player-roster"
-                    className="grid grid-cols-2 gap-2 max-h-[210px] overflow-y-auto pr-1"
-                  >
-                    {roomState.players.map((p) => {
-                      const isSelected = highlightedParkPlayerId === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => {
-                            soundFx.unlock();
-                            soundFx.playAnswerLock();
-                            setHighlightedParkPlayerId(p.id);
-                          }}
-                          className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-colors ${
-                            isSelected
-                              ? 'bg-indigo-600/30 border-indigo-400'
-                              : 'bg-slate-900/80 border-slate-700 hover:border-slate-500'
-                          }`}
-                        >
-                          <CuteAvatar avatarId={p.avatarId} size={32} />
-                          <span className="font-semibold text-xs sm:text-sm text-white truncate">
-                            {p.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <div className="w-52 h-52 rounded-2xl bg-slate-700 animate-pulse" />
                 )}
-              </section>
-            </aside>
+              </div>
 
-            {/* Right Wide Grassy Park Playground */}
-            <section className="lg:col-span-8">
-              <LobbyParkStage
-                roomCode={roomState.code}
-                players={roomState.players}
-                highlightedPlayerId={highlightedParkPlayerId}
-                onSelectPlayer={(playerId) => setHighlightedParkPlayerId(playerId)}
-              />
+              <div className="space-y-3">
+                <div className="text-xs text-slate-400 text-center break-all">{joinUrl}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={copyJoinLink}
+                    className="min-h-[44px] rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedLink ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="host-start-game"
+                    onClick={() => {
+                      soundFx.unlock();
+                      void hostStartOrAdvanceQuestion({
+                        code: activeRoomCode,
+                        quiz: activeLiveQuiz,
+                        questionIndex: 0,
+                        players: playersDocs,
+                      });
+                    }}
+                    className="min-h-[44px] rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-colors"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>เริ่มเกมเลย!</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="lg:col-span-7 rounded-3xl bg-slate-800/60 border border-slate-700 p-6 sm:p-7">
+              <div className="flex items-center justify-between gap-4 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-5 h-5 text-indigo-400" />
+                  <h2 className="text-xl font-bold text-white">ผู้เล่นในห้องรอคอย</h2>
+                </div>
+                <span
+                  data-testid="host-player-count"
+                  className="font-mono tabular-nums text-sm font-bold text-indigo-300"
+                >
+                  {roomState.totalPlayers} / {MAX_PLAYERS_PER_ROOM} คน
+                </span>
+              </div>
+
+              {roomState.players.length === 0 ? (
+                <div className="py-16 text-center space-y-2 border border-dashed border-slate-700 rounded-2xl">
+                  <p className="text-slate-300 font-semibold">กำลังรอผู้เล่นเข้าร่วมห้อง...</p>
+                  <p className="text-sm text-slate-400">
+                    ผู้เล่นสามารถเปิดกล้องมือถือสแกน QR Code หรือกรอกรหัส {roomState.code} เพื่อเลือกตัวละครและเข้าเล่น
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[440px] overflow-y-auto pr-1">
+                  {roomState.players.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-700"
+                    >
+                      <CuteAvatar avatarId={p.avatarId} size={38} />
+                      <span className="font-semibold text-sm text-white truncate">
+                        {p.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           </main>
         )}
@@ -1002,24 +969,10 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
           <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col justify-between gap-3">
             <div className="shrink-0 flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <div
-                  data-testid="host-question-counter"
-                  className={`transition-all duration-300 text-indigo-300 ${
-                    roomState.phase === 'QUESTION'
-                      ? 'text-lg sm:text-2xl font-extrabold'
-                      : 'text-base sm:text-lg font-bold'
-                  }`}
-                >
+                <div className="text-sm font-semibold text-indigo-300">
                   คำถามข้อที่ {roomState.currentQuestionIndex + 1} จาก {roomState.totalQuestions}
                 </div>
-                <div
-                  data-testid="host-answered-counter"
-                  className={`transition-all duration-300 font-mono tabular-nums ${
-                    roomState.phase === 'QUESTION'
-                      ? 'text-base sm:text-xl font-bold text-slate-100'
-                      : 'text-sm sm:text-base font-semibold text-slate-300'
-                  }`}
-                >
+                <div className="text-sm text-slate-300 font-mono tabular-nums">
                   ส่งคำตอบแล้ว {roomState.answeredCount} / {roomState.totalPlayers} คน
                 </div>
               </div>
@@ -1030,41 +983,23 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             </div>
 
             <div
-              className={`flex-1 min-h-0 grid gap-3 items-stretch transition-all duration-300 ${
+              className={`flex-1 min-h-0 grid gap-3 items-stretch ${
                 roomState.phase === 'REVEAL' ? 'grid-cols-1 md:grid-cols-12' : 'grid-cols-1'
               }`}
             >
               <div
-                data-testid="host-question-card"
-                className={`min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/80 border border-slate-700 flex flex-col overflow-hidden transition-all duration-300 ${
-                  roomState.phase === 'REVEAL'
-                    ? 'md:col-span-7 px-5 py-3.5 items-center md:items-start text-center md:text-left gap-2.5'
-                    : 'px-6 py-4 items-center text-center gap-3'
-                } ${!q.imageUrl && !q.videoUrl ? 'justify-center' : 'justify-start'}`}
+                className={`${
+                  roomState.phase === 'REVEAL' ? 'md:col-span-7' : ''
+                } min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/80 border border-slate-700 px-5 py-3.5 flex flex-col items-center justify-center text-center gap-2 overflow-hidden`}
               >
-                <h2
-                  data-testid="host-question-text"
-                  className={`shrink-0 font-extrabold text-white text-balance transition-all duration-300 ${
-                    roomState.phase === 'REVEAL'
-                      ? 'text-lg sm:text-xl lg:text-2xl leading-snug'
-                      : 'text-xl sm:text-3xl lg:text-[2.3rem] leading-snug'
-                  }`}
-                >
+                <h2 className="shrink-0 text-xl sm:text-2xl lg:text-3xl font-extrabold text-white leading-snug text-balance">
                   {q.text}
                 </h2>
-                <MediaStage
-                  imageUrl={q.imageUrl}
-                  videoUrl={q.videoUrl}
-                  hostExpanded={roomState.phase === 'QUESTION'}
-                  hostFit={roomState.phase === 'REVEAL'}
-                />
+                <MediaStage imageUrl={q.imageUrl} videoUrl={q.videoUrl} hostFit={true} />
               </div>
 
               {roomState.phase === 'REVEAL' && (
-                <div
-                  data-testid="host-reveal-stats"
-                  className="md:col-span-5 min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/70 border border-slate-700 p-4 flex flex-col justify-between gap-3"
-                >
+                <div className="md:col-span-5 min-h-0 rounded-2xl sm:rounded-3xl bg-slate-800/70 border border-slate-700 p-4 flex flex-col justify-between gap-3">
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-200 shrink-0">
                     <BarChart3 className="w-4 h-4 text-indigo-400" />
                     <span>สถิติการตอบของผู้เล่นในข้อนี้</span>

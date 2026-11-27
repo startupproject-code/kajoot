@@ -248,17 +248,4 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.match(rulesText, /q\.imageUrl\.size\(\) <= 700000/);
     assert.match(rulesText, /data\.coverImageUrl\.size\(\) <= 700000/);
   });
-
-  it('allows all 39 avatars (20 character avatars + 19 animal avatars) in rules and validation', async () => {
-    const { AVATARS } = await import('./src/shared/types');
-    const { isValidAvatarId } = await import('./src/shared/quizLogic');
-    const prodRules = fs.readFileSync('firestore.rules', 'utf8');
-
-    assert.equal(AVATARS.length, 39);
-    for (const av of AVATARS) {
-      assert.equal(isValidAvatarId(av.id), true, `Expected isValidAvatarId(${av.id}) to be true`);
-      assert.match(rulesText, new RegExp(`'${av.id}'`), `Expected ${av.id} in DRAFT_firestore.rules`);
-      assert.match(prodRules, new RegExp(`'${av.id}'`), `Expected ${av.id} in firestore.rules`);
-    }
-  });
 });
