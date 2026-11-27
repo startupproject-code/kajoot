@@ -22,6 +22,8 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.match(rulesText, /isValidRoomPlayer\(/);
     assert.match(rulesText, /isValidRoomAnswer\(/);
     assert.match(rulesText, /existing\(\)\.phase != 'ENDED'/);
+    assert.match(rulesText, /'SHOWCASE'/);
+    assert.match(fs.readFileSync('firestore.rules', 'utf8'), /'SHOWCASE'/);
     assert.match(rulesText, /allow update: if false;/);
   });
 

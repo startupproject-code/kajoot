@@ -12,6 +12,11 @@ interface PodiumStageProps {
   players: PlayerPublic[];
   fireworksBurstKey?: number;
   darkSurface?: boolean;
+  visiblePlaces?: Array<1 | 2 | 3>;
+  dimmed?: boolean;
+  newlyRevealedPlace?: 1 | 2 | 3 | null;
+  hideEmptyHint?: boolean;
+  children?: React.ReactNode;
 }
 
 interface PedestalSlotConfig {
@@ -54,9 +59,15 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
   players,
   fireworksBurstKey = 0,
   darkSurface = true,
+  visiblePlaces,
+  dimmed = false,
+  newlyRevealedPlace = null,
+  hideEmptyHint = false,
+  children,
 }) => {
   const top3 = players.slice(0, 3);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const visiblePlaceSet = visiblePlaces ? new Set(visiblePlaces) : null;
 
   useEffect(() => {
     setFailedImages({});
@@ -69,9 +80,14 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
     top3[2]?.avatarId,
   ]);
 
+  const dimFilterClass = dimmed
+    ? 'brightness-[0.38] saturate-50 transition-all duration-500'
+    : 'brightness-100 saturate-100 transition-all duration-500';
+
   return (
     <section
       data-testid="podium-stage"
+      data-dimmed={dimmed ? 'true' : 'false'}
       className="rounded-3xl bg-slate-800/60 border border-slate-700/80 p-4 sm:p-5 space-y-4"
     >
       <div className="flex items-center justify-center gap-2">
@@ -92,10 +108,10 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
           alt="แท่นรับรางวัลอันดับ 1 2 3"
           decoding="async"
           draggable={false}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          className={`absolute inset-0 w-full h-full object-cover pointer-events-none ${dimFilterClass}`}
         />
 
-        {top3.length === 0 && (
+        {top3.length === 0 && !hideEmptyHint && (
           <div className="absolute inset-x-4 bottom-4 flex justify-center">
             <div className="rounded-xl bg-slate-950/85 border border-slate-700 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-300">
               ยังไม่มีผู้เล่นขึ้นแท่นรางวัลในรอบนี้
@@ -111,6 +127,7 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
 
         {/* Top 3 Characters on Pedestals */}
         {PEDESTAL_SLOTS.map((slot) => {
+          if (visiblePlaceSet && !visiblePlaceSet.has(slot.place)) return null;
           const player = top3[slot.place - 1];
           if (!player) return null;
 
@@ -118,6 +135,8 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
           const podiumAsset = resolvePodiumCharacterAsset(player.avatarId, slot.place);
           const imgKey = `${slot.place}-${player.avatarId}-${podiumAsset.imagePath}`;
           const imgFailed = Boolean(failedImages[imgKey]);
+          const landAnimClass =
+            newlyRevealedPlace === slot.place ? 'animate-showcase-pedestal-land' : '';
 
           return (
             <React.Fragment key={player.id}>
@@ -125,7 +144,7 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
               {slot.place === 1 && podiumAsset.isFullBodyWinner && !imgFailed ? (
                 <div
                   data-testid="podium-winner-1-fullbody"
-                  className="pointer-events-none absolute z-10 -translate-x-1/2 flex items-end justify-center h-[56%]"
+                  className={`pointer-events-none absolute z-10 -translate-x-1/2 flex items-end justify-center h-[56%] ${dimFilterClass} ${landAnimClass}`}
                   style={{ left: slot.leftPercent, bottom: '39%' }}
                 >
                   <img
@@ -142,7 +161,7 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
               ) : (
                 <div
                   data-testid={`podium-winner-${slot.place}-portrait`}
-                  className="pointer-events-none absolute z-10 -translate-x-1/2 flex flex-col items-center"
+                  className={`pointer-events-none absolute z-10 -translate-x-1/2 flex flex-col items-center ${dimFilterClass} ${landAnimClass}`}
                   style={{
                     left: slot.leftPercent,
                     bottom: slot.portraitBottomPercent,
@@ -181,7 +200,7 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
               {/* Crisp Floor Nameplate & Score Beneath Each Pedestal */}
               <div
                 data-testid={`podium-plate-${slot.place}`}
-                className={`absolute z-10 -translate-x-1/2 bottom-2 sm:bottom-3 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-center shadow-lg backdrop-blur-sm ${slot.badgeBgClass}`}
+                className={`absolute z-10 -translate-x-1/2 bottom-2 sm:bottom-3 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-center shadow-lg backdrop-blur-sm ${slot.badgeBgClass} ${dimFilterClass} ${landAnimClass}`}
                 style={{
                   left: slot.leftPercent,
                   width: slot.place === 1 ? '26%' : '22.5%',
@@ -202,6 +221,17 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
             </React.Fragment>
           );
         })}
+
+        {/* Suspense Scrim Layer (dims podium & placed winners during announcement) */}
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 z-20 bg-slate-950/60 transition-opacity duration-500 ${
+            dimmed ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+
+        {/* Foreground Announcement Overlay Slot */}
+        {children}
 
         {/* 5-Second Fireworks Celebration Layer */}
         <FireworksOverlay

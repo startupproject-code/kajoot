@@ -203,7 +203,7 @@ export class PlayerPresenceTracker {
       staleTimeoutMs?: number;
     }
   ): string[] {
-    if (phase === 'ENDED') return [];
+    if (phase === 'ENDED' || phase === 'SHOWCASE') return [];
 
     const graceMs = options?.disconnectedGraceMs ?? PLAYER_DISCONNECTED_GRACE_MS;
     const staleMs = options?.staleTimeoutMs ?? PLAYER_STALE_TIMEOUT_MS;

@@ -175,11 +175,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     return () => unsub();
   }, [step, roomCode, guestPlayerId]);
 
-  // Keep latest session + ended state in refs without restarting heartbeat effect across phase changes
+  // Keep latest session + ended/showcase state in refs without restarting heartbeat effect across phase changes
   const isActiveRoomSession =
-    step === 'IN_ROOM' && Boolean(roomCode) && roomDoc?.phase !== 'ENDED';
+    step === 'IN_ROOM' &&
+    Boolean(roomCode) &&
+    roomDoc?.phase !== 'ENDED' &&
+    roomDoc?.phase !== 'SHOWCASE';
   const isRoomEndedRef = useRef(false);
-  isRoomEndedRef.current = roomDoc?.phase === 'ENDED';
+  isRoomEndedRef.current = roomDoc?.phase === 'ENDED' || roomDoc?.phase === 'SHOWCASE';
 
   // Player presence heartbeat + immediate disconnect signal on page close / app switch / unmount
   useEffect(() => {
@@ -436,7 +439,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     intentionalLeaveRef.current = true;
     const session = activeSessionRef.current;
     activeSessionRef.current = null;
-    if (session && session.phase !== 'ENDED') {
+    if (session && session.phase !== 'ENDED' && session.phase !== 'SHOWCASE') {
       void markPlayerDisconnected({
         code: session.code,
         uid: session.uid,
@@ -706,7 +709,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           >
             {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
-          {roomState.phase !== 'ENDED' && (
+          {roomState.phase !== 'ENDED' && roomState.phase !== 'SHOWCASE' && (
             <button
               type="button"
               data-testid="player-leave-room-btn"
@@ -945,6 +948,38 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             highlightPlayerId={guestPlayerId}
             darkSurface={true}
           />
+        </main>
+      )}
+
+      {/* AWARD SHOWCASE SUSPENSE WAIT (MODERATOR ANNOUNCES 3 -> 2 -> 1 ON MAIN SCREEN) */}
+      {roomState.phase === 'SHOWCASE' && (
+        <main
+          data-testid="player-showcase-wait"
+          className="flex-1 max-w-xl w-full mx-auto px-4 py-8 flex flex-col items-center justify-center text-center"
+        >
+          <div className="w-full rounded-3xl bg-slate-800/80 border border-amber-400/35 p-7 sm:p-10 shadow-2xl space-y-5">
+            <div className="w-20 h-20 mx-auto rounded-3xl bg-amber-400/15 border border-amber-400/40 flex items-center justify-center animate-pulse">
+              <Trophy className="w-10 h-10 text-amber-400" />
+            </div>
+            {me && (
+              <div className="flex justify-center">
+                <CuteAvatar
+                  avatarId={me.avatarId}
+                  poseId={me.poseId || poseId}
+                  size={84}
+                  className="ring-4 ring-amber-400/70 shadow-lg"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+                อยู่ระหว่างประกาศผลรางวัล
+              </h2>
+              <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
+                รอติดตามการประกาศอันดับผู้ชนะบนหน้าจอหลักพร้อมกัน...
+              </p>
+            </div>
+          </div>
         </main>
       )}
 

@@ -606,7 +606,7 @@ export async function hostRevealCurrentQuestion(params: {
 
 export async function hostTransitionPhase(params: {
   code: string;
-  phase: 'LEADERBOARD' | 'ENDED';
+  phase: 'LEADERBOARD' | 'SHOWCASE' | 'ENDED';
   quiz: QuizSet;
   currentQuestionIndex: number;
   players: FirestorePlayerDoc[];
@@ -668,7 +668,7 @@ export async function checkFirebaseRoom(codeInput: string): Promise<{
     }
 
     const room = snap.data() as FirestoreRoomDoc;
-    if (room.phase === 'ENDED') {
+    if (room.phase === 'ENDED' || room.phase === 'SHOWCASE') {
       return {
         code: cleanCode,
         exists: false,
@@ -728,7 +728,7 @@ export async function hostPruneDisconnectedPlayers(params: {
   currentQuestionIndex?: number;
   phase?: RoomPhase;
 }): Promise<void> {
-  if (params.phase === 'ENDED') return;
+  if (params.phase === 'ENDED' || params.phase === 'SHOWCASE') return;
   const uniqueIds = Array.from(new Set(params.playerIds)).filter((id) =>
     isValidFirebaseId(id)
   );

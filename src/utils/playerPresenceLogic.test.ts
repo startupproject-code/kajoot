@@ -164,9 +164,10 @@ describe('playerPresenceLogic', () => {
     tracker.shiftForHostWakeup(40000);
     assert.deepEqual(tracker.getDisconnectedPlayerIds([p1], 'LOBBY', 41000), []);
 
-    // Never prune once phase is ENDED (preserve final podium winners)
+    // Never prune once phase is SHOWCASE or ENDED (preserve final podium winners)
     const pDisconnected = makePlayer({ id: 'p_2', connected: false, updatedAt: 1000 });
     tracker.syncSnapshot([p1, pDisconnected], [], 1000);
+    assert.deepEqual(tracker.getDisconnectedPlayerIds([p1, pDisconnected], 'SHOWCASE', 999999), []);
     assert.deepEqual(tracker.getDisconnectedPlayerIds([p1, pDisconnected], 'ENDED', 999999), []);
   });
 

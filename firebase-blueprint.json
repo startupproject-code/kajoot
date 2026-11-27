@@ -112,7 +112,7 @@
         },
         "phase": {
           "type": "string",
-          "enum": ["LOBBY", "QUESTION", "REVEAL", "LEADERBOARD", "ENDED"]
+          "enum": ["LOBBY", "QUESTION", "REVEAL", "LEADERBOARD", "SHOWCASE", "ENDED"]
         },
         "currentQuestionIndex": {
           "type": "integer"

@@ -79,6 +79,7 @@ import {
 } from '../utils/playerPresenceLogic';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
+import { AwardShowcaseStage } from './AwardShowcaseStage';
 import { CountdownClock } from './CountdownClock';
 import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
@@ -326,7 +327,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   // Record observed player heartbeats & answers in Moderator presence tracker
   useEffect(() => {
-    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED') return;
+    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED' || roomDoc.phase === 'SHOWCASE') {
+      return;
+    }
     const isHostWriteWindow = Date.now() - lastHostBatchWriteAtRef.current < 2500;
     presenceTrackerRef.current.syncSnapshot(playersDocs, answersDocs, Date.now(), {
       isHostWriteWindow,
@@ -335,7 +338,12 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   // Periodically auto-delete disconnected, closed-app, or backgrounded players from the room
   const isRoomActiveForPruning = Boolean(
-    authReady && user && activeRoomCode && roomDoc && roomDoc.phase !== 'ENDED'
+    authReady &&
+      user &&
+      activeRoomCode &&
+      roomDoc &&
+      roomDoc.phase !== 'ENDED' &&
+      roomDoc.phase !== 'SHOWCASE'
   );
   useEffect(() => {
     if (!isRoomActiveForPruning) return;
@@ -357,7 +365,13 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         playersDocs: latestPlayers,
         answersDocs: latestAnswers,
       } = latestPresenceContextRef.current;
-      if (!code || !latestRoom || latestRoom.phase === 'ENDED' || latestPlayers.length === 0) {
+      if (
+        !code ||
+        !latestRoom ||
+        latestRoom.phase === 'ENDED' ||
+        latestRoom.phase === 'SHOWCASE' ||
+        latestPlayers.length === 0
+      ) {
         return;
       }
 
@@ -394,7 +408,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
   // Sync live players & answer counts to Firestore room doc
   useEffect(() => {
-    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED') return;
+    if (!activeRoomCode || !roomDoc || roomDoc.phase === 'ENDED' || roomDoc.phase === 'SHOWCASE') {
+      return;
+    }
     const qIdx = roomDoc.currentQuestionIndex;
     const { answeredCount, answerCounts: counts } = computeRemainingQuestionStats(
       playersDocs,
@@ -520,7 +536,9 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
       }
       lastSoundSecRef.current = null;
     } else if (roomState.phase === 'ENDED' && prevPhase !== 'ENDED') {
-      soundFx.playPodiumFanfare();
+      if (prevPhase !== 'SHOWCASE') {
+        soundFx.playPodiumFanfare();
+      }
       setFireworksBurstKey((k) => k + 1);
     }
   }, [roomState]);
@@ -1367,10 +1385,14 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   type="button"
                   data-testid="host-leaderboard-btn"
                   onClick={() => {
-                    const nextPhase =
-                      roomState.currentQuestionIndex >= roomState.totalQuestions - 1
-                        ? 'ENDED'
-                        : 'LEADERBOARD';
+                    soundFx.unlock();
+                    const isFinalQuestion =
+                      roomState.currentQuestionIndex >= roomState.totalQuestions - 1;
+                    const nextPhase = isFinalQuestion
+                      ? playersDocs.length > 0
+                        ? 'SHOWCASE'
+                        : 'ENDED'
+                      : 'LEADERBOARD';
                     void hostTransitionPhase({
                       code: activeRoomCode,
                       phase: nextPhase,
@@ -1448,6 +1470,25 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               darkSurface={true}
             />
           </main>
+        )}
+
+        {/* PHASE: SHOWCASE (SUSPENSEFUL MODERATOR-ONLY 3 -> 2 -> 1 AWARD CEREMONY) */}
+        {roomState.phase === 'SHOWCASE' && (
+          <AwardShowcaseStage
+            quizTitle={roomState.quizTitle}
+            totalPlayers={roomState.totalPlayers}
+            players={roomState.players}
+            muted={muted}
+            onComplete={() => {
+              void hostTransitionPhase({
+                code: activeRoomCode,
+                phase: 'ENDED',
+                quiz: activeLiveQuiz,
+                currentQuestionIndex: roomState.currentQuestionIndex,
+                players: playersDocs,
+              });
+            }}
+          />
         )}
 
         {/* PHASE: ENDED */}

@@ -53,7 +53,7 @@ service cloud.firestore {
     }
 
     function isValidPhase(phase) {
-      return phase is string && phase.size() <= 20 && phase in ['LOBBY', 'QUESTION', 'REVEAL', 'LEADERBOARD', 'ENDED'];
+      return phase is string && phase.size() <= 20 && phase in ['LOBBY', 'QUESTION', 'REVEAL', 'LEADERBOARD', 'SHOWCASE', 'ENDED'];
     }
 
     function isValidPoseId(poseId) {
@@ -284,7 +284,7 @@ service cloud.firestore {
           (incoming().phase == existing().phase && incoming().diff(existing()).affectedKeys().hasOnly(['answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
           (incoming().phase == 'QUESTION' && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestionIndex', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
           (incoming().phase == 'REVEAL' && existing().phase == 'QUESTION' && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt'])) ||
-          ((incoming().phase == 'LEADERBOARD' || incoming().phase == 'ENDED') && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt']))
+          ((incoming().phase == 'LEADERBOARD' || incoming().phase == 'SHOWCASE' || incoming().phase == 'ENDED') && incoming().diff(existing()).affectedKeys().hasOnly(['phase', 'currentQuestion', 'questionStartedAt', 'questionEndsAt', 'answeredCount', 'totalPlayers', 'answerCounts', 'leaderboard', 'updatedAt']))
         );
 
       allow delete: if isVerifiedUser()

@@ -71,7 +71,7 @@ export interface QuizSet {
   questions: QuizQuestion[];
 }
 
-export type RoomPhase = 'LOBBY' | 'QUESTION' | 'REVEAL' | 'LEADERBOARD' | 'ENDED';
+export type RoomPhase = 'LOBBY' | 'QUESTION' | 'REVEAL' | 'LEADERBOARD' | 'SHOWCASE' | 'ENDED';
 
 export interface PlayerPublic {
   id: string;
