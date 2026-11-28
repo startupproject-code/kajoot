@@ -282,13 +282,15 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.equal(isValidPoseForAvatar('char_05', 'pose_999'), false);
     assert.equal(isValidPoseForAvatar('char_01', 'pose_1'), true);
     assert.equal(isValidPoseForAvatar('char_14', 'pose_6'), true);
-    assert.equal(isValidPoseForAvatar('char_09', 'pose_1'), false);
-    assert.equal(resolvePlayerPoseImage('char_05', 'pose_1').imagePath, '/assets/aistudio/1.________2ee20ed8.webp');
-    assert.equal(resolvePlayerPoseImage('char_09', 'pose_1').id, 'default');
+    assert.equal(isValidPoseForAvatar('char_09', 'pose_1'), true);
+    assert.equal(isValidPoseForAvatar('char_19', 'pose_6'), true);
+    assert.equal(isValidPoseForAvatar('char_19', 'pose_999'), false);
+    assert.equal(resolvePlayerPoseImage('char_05', 'pose_1').imagePath, '/assets/actions/น้องหมวกแก๊ปเขียว/1_ตาเหล่.webp');
+    assert.equal(resolvePlayerPoseImage('char_19', 'pose_999').id, 'default');
 
     // Every avatar and pose asset must be a .webp file present under public/
     const poseCharacters = Object.keys(CHARACTER_POSES);
-    assert.equal(poseCharacters.length, 13);
+    assert.equal(poseCharacters.length, 19);
     const seenPosePaths = new Set<string>();
     for (const av of AVATARS) {
       assert.match(av.imagePath, /\.webp$/, `Expected ${av.id} to use .webp`);
@@ -302,7 +304,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         }
       }
     }
-    assert.equal(seenPosePaths.size, 78);
+    assert.equal(seenPosePaths.size, 114);
 
     const validPosePayload = validateRoomPlayerPayload(
       {
@@ -335,8 +337,8 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Ton',
-        avatarId: 'char_09',
-        poseId: 'pose_1',
+        avatarId: 'char_19',
+        poseId: 'pose_999',
         score: 0,
         streak: 0,
         bestStreak: 0,

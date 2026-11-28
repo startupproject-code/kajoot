@@ -10,6 +10,8 @@ export const FIREWORKS_DURATION_MS = 5000;
  * as more full-body champion illustrations are uploaded.
  */
 export const PODIUM_WINNER_ASSETS: Partial<Record<AvatarId, string>> = {
+  char_01: '/assets/podium/winners/char_01.webp',
+  char_02: '/assets/podium/winners/char_02.webp',
   char_03: '/assets/podium/winners/char_03.webp',
   char_04: '/assets/podium/winners/char_04.webp',
   char_05: '/assets/podium/winners/char_05.webp',
@@ -20,6 +22,21 @@ export const PODIUM_WINNER_ASSETS: Partial<Record<AvatarId, string>> = {
   char_10: '/assets/podium/winners/char_10.webp',
   char_11: '/assets/podium/winners/char_11.webp',
   char_12: '/assets/podium/winners/char_12.webp',
+  char_13: '/assets/podium/winners/char_13.webp',
+  char_14: '/assets/podium/winners/char_14.webp',
+  char_15: '/assets/podium/winners/char_15.webp',
+  char_16: '/assets/podium/winners/char_16.webp',
+  char_17: '/assets/podium/winners/char_17.webp',
+  char_18: '/assets/podium/winners/char_18.webp',
+  char_19: '/assets/podium/winners/char_19.webp',
+};
+
+/**
+ * Dedicated full-body 2nd-place assets rendered directly on pedestal #2.
+ * Add additional `<charId>.webp` assets under `/public/assets/podium/second/`.
+ */
+export const PODIUM_SECOND_ASSETS: Partial<Record<AvatarId, string>> = {
+  char_19: '/assets/podium/second/char_19.webp',
 };
 
 export interface ResolvedPodiumAsset {
@@ -32,13 +49,26 @@ export function resolvePodiumCharacterAsset(
   avatarId: AvatarId,
   place: 1 | 2 | 3
 ): ResolvedPodiumAsset {
-  const customWinnerAsset = place === 1 ? PODIUM_WINNER_ASSETS[avatarId] : undefined;
-  if (customWinnerAsset) {
-    return {
-      imagePath: customWinnerAsset,
-      isFullBodyWinner: true,
-      label: 'ยืนชูถ้วยผู้ชนะ',
-    };
+  if (place === 1) {
+    const customWinnerAsset = PODIUM_WINNER_ASSETS[avatarId];
+    if (customWinnerAsset) {
+      return {
+        imagePath: customWinnerAsset,
+        isFullBodyWinner: true,
+        label: 'ยืนชูถ้วยผู้ชนะ',
+      };
+    }
+  }
+
+  if (place === 2) {
+    const customSecondAsset = PODIUM_SECOND_ASSETS[avatarId];
+    if (customSecondAsset) {
+      return {
+        imagePath: customSecondAsset,
+        isFullBodyWinner: true,
+        label: 'ผู้ชนะอันดับ 2',
+      };
+    }
   }
 
   const poses = getCharacterPoses(avatarId);

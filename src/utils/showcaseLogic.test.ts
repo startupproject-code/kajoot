@@ -67,9 +67,9 @@ describe('showcaseLogic', () => {
   });
 
   it('uses exact audio assets present on disk and requested inter-rank timings', () => {
-    assert.equal(getShowcaseAudioForPlace(3), '/assets/aistudio/2_and_3_feb34c93.mp3');
-    assert.equal(getShowcaseAudioForPlace(2), '/assets/aistudio/2_and_3_feb34c93.mp3');
-    assert.equal(getShowcaseAudioForPlace(1), '/assets/aistudio/1_272ce0dd.mp3');
+    assert.equal(getShowcaseAudioForPlace(3), '/assets/audio/rank_2_3.mp3');
+    assert.equal(getShowcaseAudioForPlace(2), '/assets/audio/rank_2_3.mp3');
+    assert.equal(getShowcaseAudioForPlace(1), '/assets/audio/rank_1.mp3');
 
     assert.equal(fs.existsSync(`public${SHOWCASE_AUDIO.rank2And3}`), true);
     assert.equal(fs.existsSync(`public${SHOWCASE_AUDIO.rank1}`), true);

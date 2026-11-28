@@ -17,7 +17,7 @@ interface LobbyParkStageProps {
   onSelectPlayer?: (playerId: string) => void;
 }
 
-const PARK_IMAGE_URL = '/assets/aistudio/Gemini_Generated_Image_odhsctodhsctodhs_52acc856.jpg';
+const PARK_IMAGE_URL = '/assets/scenes/lobby-park.jpg';
 const MAX_PARK_ACTORS = 45;
 
 export const LobbyParkStage: React.FC<LobbyParkStageProps> = ({

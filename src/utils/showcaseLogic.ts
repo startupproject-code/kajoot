@@ -3,8 +3,8 @@ import { PlayerPublic } from '../shared/types';
 export type ShowcasePlace = 1 | 2 | 3;
 
 export const SHOWCASE_AUDIO = {
-  rank2And3: '/assets/aistudio/2_and_3_feb34c93.mp3',
-  rank1: '/assets/aistudio/1_272ce0dd.mp3',
+  rank2And3: '/assets/audio/rank_2_3.mp3',
+  rank1: '/assets/audio/rank_1.mp3',
 } as const;
 
 export const SHOWCASE_TIMINGS = {

@@ -23,6 +23,8 @@ interface PedestalSlotConfig {
   place: 1 | 2 | 3;
   leftPercent: string;
   portraitBottomPercent: string;
+  fullBodyBottomPercent: string;
+  fullBodyHeightClass: string;
   ringClass: string;
   scoreClass: string;
   badgeBgClass: string;
@@ -31,24 +33,30 @@ interface PedestalSlotConfig {
 const PEDESTAL_SLOTS: PedestalSlotConfig[] = [
   {
     place: 2,
-    leftPercent: '26.2%',
+    leftPercent: '26.8%',
     portraitBottomPercent: '34.2%',
+    fullBodyBottomPercent: '33.5%',
+    fullBodyHeightClass: 'h-[51%]',
     ringClass: 'ring-slate-300',
     scoreClass: 'text-slate-200',
     badgeBgClass: 'border-slate-400/50 bg-slate-950/90',
   },
   {
     place: 1,
-    leftPercent: '50%',
+    leftPercent: '50.5%',
     portraitBottomPercent: '40.5%',
+    fullBodyBottomPercent: '39%',
+    fullBodyHeightClass: 'h-[56%]',
     ringClass: 'ring-amber-400',
     scoreClass: 'text-amber-300',
     badgeBgClass: 'border-amber-400/70 bg-slate-950/95 shadow-amber-500/20',
   },
   {
     place: 3,
-    leftPercent: '73.8%',
+    leftPercent: '74.6%',
     portraitBottomPercent: '30.5%',
+    fullBodyBottomPercent: '29.8%',
+    fullBodyHeightClass: 'h-[47%]',
     ringClass: 'ring-orange-400',
     scoreClass: 'text-orange-300',
     badgeBgClass: 'border-orange-400/50 bg-slate-950/90',
@@ -141,11 +149,11 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
           return (
             <React.Fragment key={player.id}>
               {/* Character Visual Positioned Above Pedestal */}
-              {slot.place === 1 && podiumAsset.isFullBodyWinner && !imgFailed ? (
+              {podiumAsset.isFullBodyWinner && !imgFailed ? (
                 <div
-                  data-testid="podium-winner-1-fullbody"
-                  className={`pointer-events-none absolute z-10 -translate-x-1/2 flex items-end justify-center h-[56%] ${dimFilterClass} ${landAnimClass}`}
-                  style={{ left: slot.leftPercent, bottom: '39%' }}
+                  data-testid={`podium-winner-${slot.place}-fullbody`}
+                  className={`pointer-events-none absolute z-10 -translate-x-1/2 flex items-end justify-center ${slot.fullBodyHeightClass} ${dimFilterClass} ${landAnimClass}`}
+                  style={{ left: slot.leftPercent, bottom: slot.fullBodyBottomPercent }}
                 >
                   <img
                     src={podiumAsset.imagePath}
