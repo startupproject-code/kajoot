@@ -46,7 +46,7 @@ describe('showcaseLogic', () => {
       [2, 1]
     );
     assert.equal(two[0].audioPath, SHOWCASE_AUDIO.rank2And3);
-    assert.equal(two[0].postSettlePauseMs, 10000);
+    assert.equal(two[0].postSettlePauseMs, 5000);
     assert.equal(two[1].audioPath, SHOWCASE_AUDIO.rank1);
 
     const four = buildShowcaseQueue([
@@ -62,7 +62,7 @@ describe('showcaseLogic', () => {
     assert.equal(four[0].player.id, 'p_3');
     assert.equal(four[0].postSettlePauseMs, 5000);
     assert.equal(four[1].player.id, 'p_2');
-    assert.equal(four[1].postSettlePauseMs, 10000);
+    assert.equal(four[1].postSettlePauseMs, 5000);
     assert.equal(four[2].player.id, 'p_1');
   });
 
@@ -75,7 +75,7 @@ describe('showcaseLogic', () => {
     assert.equal(fs.existsSync(`public${SHOWCASE_AUDIO.rank1}`), true);
 
     assert.equal(SHOWCASE_TIMINGS.AFTER_RANK_3_WAIT_MS, 5000);
-    assert.equal(SHOWCASE_TIMINGS.AFTER_RANK_2_WAIT_MS, 10000);
+    assert.equal(SHOWCASE_TIMINGS.AFTER_RANK_2_WAIT_MS, 5000);
     assert.ok(SHOWCASE_TIMINGS.RANK_2_3_NAME_REVEAL_MS >= 1000);
     assert.ok(SHOWCASE_TIMINGS.RANK_1_NAME_REVEAL_MS >= 4400);
   });
