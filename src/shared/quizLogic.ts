@@ -1,4 +1,4 @@
-import { AnswerIndex, AvatarId, AVATARS, PlayerPublic, QuizQuestion } from './types';
+import { AnswerIndex, AvatarId, AVATARS, PlayerPublic, QuizQuestion, RoomMode, TeamId } from './types';
 
 export function generateRoomCode(existingCodes: Set<string>): string {
   if (existingCodes.size >= 9000) {
@@ -68,10 +68,173 @@ export function assignCorrectAnswerOrder(
   return orderMap;
 }
 
+export interface TeamMeta {
+  id: TeamId;
+  label: string;
+  shortLabel: string;
+  badgeClass: string;
+  panelClass: string;
+  accentTextClass: string;
+}
+
+export const TEAM_META: Record<TeamId, TeamMeta> = {
+  red: {
+    id: 'red',
+    label: 'ทีมแดง',
+    shortLabel: 'แดง',
+    badgeClass: 'bg-rose-500/20 text-rose-200 border border-rose-400/50',
+    panelClass: 'bg-rose-950/55 border-rose-500/50',
+    accentTextClass: 'text-rose-300',
+  },
+  blue: {
+    id: 'blue',
+    label: 'ทีมน้ำเงิน',
+    shortLabel: 'น้ำเงิน',
+    badgeClass: 'bg-sky-500/20 text-sky-200 border border-sky-400/50',
+    panelClass: 'bg-sky-950/55 border-sky-500/50',
+    accentTextClass: 'text-sky-300',
+  },
+};
+
+export function isValidTeamId(team: unknown): team is TeamId {
+  return team === 'red' || team === 'blue';
+}
+
+export function pickBalancedTeam(players: Array<{ team?: TeamId | null }>): TeamId {
+  let redCount = 0;
+  let blueCount = 0;
+  for (const p of players) {
+    if (p.team === 'red') redCount += 1;
+    else if (p.team === 'blue') blueCount += 1;
+  }
+  return redCount <= blueCount ? 'red' : 'blue';
+}
+
+export function computeTeamRebalanceUpdates<
+  T extends { id: string; team?: TeamId | null },
+>(players: T[]): Array<{ id: string; team: TeamId }> {
+  if (players.length === 0) return [];
+
+  const assigned = new Map<string, TeamId>();
+  let redIds: string[] = [];
+  let blueIds: string[] = [];
+  const unassignedIds: string[] = [];
+
+  for (const p of players) {
+    if (p.team === 'red') {
+      assigned.set(p.id, 'red');
+      redIds.push(p.id);
+    } else if (p.team === 'blue') {
+      assigned.set(p.id, 'blue');
+      blueIds.push(p.id);
+    } else {
+      unassignedIds.push(p.id);
+    }
+  }
+
+  for (const id of unassignedIds) {
+    if (redIds.length <= blueIds.length) {
+      assigned.set(id, 'red');
+      redIds.push(id);
+    } else {
+      assigned.set(id, 'blue');
+      blueIds.push(id);
+    }
+  }
+
+  while (redIds.length - blueIds.length > 1) {
+    const movedId = redIds.pop();
+    if (!movedId) break;
+    assigned.set(movedId, 'blue');
+    blueIds.push(movedId);
+  }
+
+  while (blueIds.length - redIds.length > 1) {
+    const movedId = blueIds.pop();
+    if (!movedId) break;
+    assigned.set(movedId, 'red');
+    redIds.push(movedId);
+  }
+
+  const updates: Array<{ id: string; team: TeamId }> = [];
+  for (const p of players) {
+    const nextTeam = assigned.get(p.id);
+    if (nextTeam && p.team !== nextTeam) {
+      updates.push({ id: p.id, team: nextTeam });
+    }
+  }
+  return updates;
+}
+
+export interface TeamStanding {
+  team: TeamId;
+  label: string;
+  totalScore: number;
+  memberCount: number;
+  correctCount: number;
+}
+
+export interface TeamStandingsSummary {
+  red: TeamStanding;
+  blue: TeamStanding;
+  winner: TeamId | 'tie';
+  scoreDiff: number;
+  mvp: PlayerPublic | null;
+}
+
+export function computeTeamStandings(players: PlayerPublic[]): TeamStandingsSummary {
+  let redScore = 0;
+  let redMembers = 0;
+  let redCorrect = 0;
+  let blueScore = 0;
+  let blueMembers = 0;
+  let blueCorrect = 0;
+  let mvp: PlayerPublic | null = null;
+
+  for (const p of players) {
+    if (!mvp || p.score > mvp.score || (p.score === mvp.score && p.rank < mvp.rank)) {
+      mvp = p;
+    }
+    if (p.team === 'red') {
+      redScore += p.score;
+      redMembers += 1;
+      redCorrect += p.correctCount;
+    } else if (p.team === 'blue') {
+      blueScore += p.score;
+      blueMembers += 1;
+      blueCorrect += p.correctCount;
+    }
+  }
+
+  const winner: TeamId | 'tie' =
+    redScore > blueScore ? 'red' : blueScore > redScore ? 'blue' : 'tie';
+
+  return {
+    red: {
+      team: 'red',
+      label: TEAM_META.red.label,
+      totalScore: redScore,
+      memberCount: redMembers,
+      correctCount: redCorrect,
+    },
+    blue: {
+      team: 'blue',
+      label: TEAM_META.blue.label,
+      totalScore: blueScore,
+      memberCount: blueMembers,
+      correctCount: blueCorrect,
+    },
+    winner,
+    scoreDiff: Math.abs(redScore - blueScore),
+    mvp,
+  };
+}
+
 export function rankPlayers<
   T extends {
     id: string;
     name: string;
+    team?: TeamId | null;
     avatarId: AvatarId;
     poseId?: string;
     score: number;
@@ -95,6 +258,7 @@ export function rankPlayers<
   return sorted.map((p, index) => ({
     id: p.id,
     name: p.name,
+    ...(isValidTeamId(p.team) ? { team: p.team } : {}),
     avatarId: p.avatarId,
     ...(p.poseId ? { poseId: p.poseId } : {}),
     score: p.score,
@@ -273,9 +437,13 @@ export function exportQuizToCsv(questions: QuizQuestion[]): string {
 export function exportResultsToCsv(
   players: PlayerPublic[],
   quizTitle: string,
-  totalQuestions: number
+  totalQuestions: number,
+  mode: RoomMode = 'single'
 ): string {
-  const header = ['อันดับ', 'ชื่อผู้เล่น', 'ตัวละคร', 'คะแนนรวม', 'ตอบถูก', 'จำนวนข้อทั้งหมด', 'ความแม่นยำ (%)'];
+  const isTeam = mode === 'team';
+  const header = isTeam
+    ? ['อันดับ', 'ชื่อผู้เล่น', 'ทีม', 'ตัวละคร', 'คะแนนรวม', 'ตอบถูก', 'จำนวนข้อทั้งหมด', 'ความแม่นยำ (%)']
+    : ['อันดับ', 'ชื่อผู้เล่น', 'ตัวละคร', 'คะแนนรวม', 'ตอบถูก', 'จำนวนข้อทั้งหมด', 'ความแม่นยำ (%)'];
   const lines = [
     `${escapeCsvCell('ชุดคำถาม')},${escapeCsvCell(quizTitle)}`,
     header.join(','),
@@ -284,17 +452,36 @@ export function exportResultsToCsv(
   for (const p of players) {
     const accuracy = totalQuestions > 0 ? Math.round((p.correctCount / totalQuestions) * 100) : 0;
     const avatarName = AVATARS.find((a) => a.id === p.avatarId)?.name ?? p.avatarId;
+    const teamLabel = isValidTeamId(p.team) ? TEAM_META[p.team].label : '-';
     lines.push(
-      [
-        escapeCsvCell(p.rank),
-        escapeCsvCell(p.name),
-        escapeCsvCell(avatarName),
-        escapeCsvCell(p.score),
-        escapeCsvCell(p.correctCount),
-        escapeCsvCell(totalQuestions),
-        escapeCsvCell(`${accuracy}%`),
-      ].join(',')
+      (isTeam
+        ? [
+            escapeCsvCell(p.rank),
+            escapeCsvCell(p.name),
+            escapeCsvCell(teamLabel),
+            escapeCsvCell(avatarName),
+            escapeCsvCell(p.score),
+            escapeCsvCell(p.correctCount),
+            escapeCsvCell(totalQuestions),
+            escapeCsvCell(`${accuracy}%`),
+          ]
+        : [
+            escapeCsvCell(p.rank),
+            escapeCsvCell(p.name),
+            escapeCsvCell(avatarName),
+            escapeCsvCell(p.score),
+            escapeCsvCell(p.correctCount),
+            escapeCsvCell(totalQuestions),
+            escapeCsvCell(`${accuracy}%`),
+          ]
+      ).join(',')
     );
+  }
+
+  if (isTeam) {
+    const summary = computeTeamStandings(players);
+    lines.push('');
+    lines.push(`${escapeCsvCell('สรุปคะแนนทีม')},${escapeCsvCell(TEAM_META.red.label)},${escapeCsvCell(summary.red.totalScore)},${escapeCsvCell(TEAM_META.blue.label)},${escapeCsvCell(summary.blue.totalScore)}`);
   }
 
   return '\uFEFF' + lines.join('\n');

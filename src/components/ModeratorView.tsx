@@ -23,9 +23,11 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  Swords,
   Trash2,
   Trophy,
   Upload,
+  User,
   Users,
   UserX,
   Video as VideoIcon,
@@ -42,6 +44,7 @@ import {
   getSyncedServerNowMs,
   hostKickFirebasePlayer,
   hostPruneDisconnectedPlayers,
+  hostRebalanceTeamsInLobby,
   hostRevealCurrentQuestion,
   hostStartOrAdvanceQuestion,
   hostTransitionPhase,
@@ -54,6 +57,8 @@ import {
 import { DEFAULT_QUIZ, SAMPLE_CSV_TEMPLATE } from '../shared/defaultQuiz';
 import { resolvePlayerPoseImage } from '../shared/characterPoses';
 import {
+  computeTeamRebalanceUpdates,
+  computeTeamStandings,
   exportQuizToCsv,
   exportResultsToCsv,
   parseQuizCsv,
@@ -64,6 +69,7 @@ import {
   MAX_PLAYERS_PER_ROOM,
   QuizQuestion,
   QuizSet,
+  RoomMode,
 } from '../shared/types';
 import {
   compressImageFileToDataUrl,
@@ -88,6 +94,7 @@ import { LeaderboardStage } from './LeaderboardStage';
 import { LobbyPoseStage } from './LobbyPoseStage';
 import { MediaStage } from './MediaStage';
 import { PodiumStage } from './PodiumStage';
+import { TeamBadge, TeamBattleBoard } from './TeamBattleBoard';
 
 interface ModeratorViewProps {
   onBackHome: () => void;
@@ -205,6 +212,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [muted, setMuted] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [launchingRoom, setLaunchingRoom] = useState(false);
+  const [selectedRoomMode, setSelectedRoomMode] = useState<RoomMode>('single');
   const [kickingPlayerId, setKickingPlayerId] = useState<string | null>(null);
   const [fireworksBurstKey, setFireworksBurstKey] = useState(0);
 
@@ -213,6 +221,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const lastPhaseRef = useRef<string | null>(null);
   const loadedSavedForUidRef = useRef<string | null>(null);
   const revealingQuestionRef = useRef<number | null>(null);
+  const rebalancingTeamsRef = useRef(false);
   const presenceTrackerRef = useRef<PlayerPresenceTracker>(new PlayerPresenceTracker());
   const pruningIdsRef = useRef<Set<string>>(new Set());
   const lastHostBatchWriteAtRef = useRef<number>(0);
@@ -454,6 +463,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         return (
           !inBoard ||
           inBoard.name !== p.name ||
+          (inBoard.team ?? null) !== (p.team ?? null) ||
           inBoard.avatarId !== p.avatarId ||
           (inBoard.poseId || 'default') !== (p.poseId || 'default')
         );
@@ -476,6 +486,41 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
 
     return () => window.clearTimeout(timer);
   }, [activeRoomCode, roomDoc, playersDocs, answersDocs]);
+
+  // Auto-balance Red vs Blue teams during LOBBY in Team Battle mode
+  useEffect(() => {
+    if (
+      !activeRoomCode ||
+      !roomDoc ||
+      roomDoc.phase !== 'LOBBY' ||
+      roomDoc.mode !== 'team' ||
+      playersDocs.length === 0 ||
+      rebalancingTeamsRef.current
+    ) {
+      return;
+    }
+    const needed = computeTeamRebalanceUpdates(playersDocs);
+    if (needed.length === 0) return;
+
+    rebalancingTeamsRef.current = true;
+    const timer = window.setTimeout(() => {
+      void hostRebalanceTeamsInLobby({
+        code: activeRoomCode,
+        players: playersDocs,
+      })
+        .catch((err) => {
+          console.warn('Auto-rebalance teams failed:', err);
+        })
+        .finally(() => {
+          rebalancingTeamsRef.current = false;
+        });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      rebalancingTeamsRef.current = false;
+    };
+  }, [activeRoomCode, roomDoc?.phase, roomDoc?.mode, playersDocs]);
 
   // Auto-reveal when countdown reaches 0 OR all active players answered
   useEffect(() => {
@@ -786,10 +831,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     }
   };
 
-  const handleLaunchRoom = async (quizOverride?: QuizSet) => {
+  const handleLaunchRoom = async (quizOverride?: QuizSet, modeOverride?: RoomMode) => {
     soundFx.unlock();
     clearAuthError();
     const quizToLaunch = quizOverride ?? quiz;
+    const modeToLaunch = modeOverride ?? selectedRoomMode;
     const invalidIdx = quizToLaunch.questions.findIndex(
       (q) => !q.text.trim() || q.options.some((o) => !o.trim())
     );
@@ -828,7 +874,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
         return;
       }
 
-      const { code, quiz: cleanQuiz } = await createFirebaseRoom(authedUser.uid, quizToLaunch);
+      const { code, quiz: cleanQuiz } = await createFirebaseRoom(
+        authedUser.uid,
+        quizToLaunch,
+        modeToLaunch
+      );
       void saveQuizForUser(authedUser.uid, cleanQuiz).catch(() => undefined);
 
       setPlayersDocs([]);
@@ -1028,12 +1078,24 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               <h1 className="font-bold text-base sm:text-lg text-white truncate">
                 {roomState.quizTitle}
               </h1>
-              <div className="text-xs text-slate-400 flex items-center gap-2">
+              <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2">
                 <span>รหัสห้อง {roomState.code}</span>
                 <span aria-hidden="true">·</span>
                 <span>
                   ผู้เล่น {roomState.totalPlayers}/{MAX_PLAYERS_PER_ROOM} คน
                 </span>
+                {roomState.mode === 'team' && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span
+                      data-testid="host-room-mode-badge"
+                      className="inline-flex items-center gap-1 rounded-md bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 text-[11px] font-bold text-amber-200"
+                    >
+                      <Swords className="w-3 h-3" />
+                      <span>Team Battle</span>
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1116,12 +1178,25 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                   onClick={() => {
                     soundFx.unlock();
                     lastHostBatchWriteAtRef.current = Date.now();
-                    void hostStartOrAdvanceQuestion({
-                      code: activeRoomCode,
-                      quiz: activeLiveQuiz,
-                      questionIndex: 0,
-                      players: playersDocs,
-                    });
+                    const runStart = async () => {
+                      let readyPlayers = playersDocs;
+                      if (
+                        roomState.mode === 'team' &&
+                        computeTeamRebalanceUpdates(playersDocs).length > 0
+                      ) {
+                        readyPlayers = await hostRebalanceTeamsInLobby({
+                          code: activeRoomCode,
+                          players: playersDocs,
+                        });
+                      }
+                      await hostStartOrAdvanceQuestion({
+                        code: activeRoomCode,
+                        quiz: activeLiveQuiz,
+                        questionIndex: 0,
+                        players: readyPlayers,
+                      });
+                    };
+                    void runStart();
                   }}
                   className="min-h-[44px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/25 transition-colors whitespace-nowrap"
                 >
@@ -1151,6 +1226,25 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 </span>
               </div>
 
+              {roomState.mode === 'team' && (() => {
+                const standings = computeTeamStandings(roomState.players);
+                return (
+                  <div
+                    data-testid="host-lobby-team-counts"
+                    className="grid grid-cols-2 gap-2 mb-3 shrink-0 text-xs font-bold"
+                  >
+                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/45 px-2.5 py-1.5 text-rose-200 flex items-center justify-between">
+                      <span>ทีมแดง</span>
+                      <span className="font-mono tabular-nums">{standings.red.memberCount} คน</span>
+                    </div>
+                    <div className="rounded-xl border border-sky-500/40 bg-sky-950/45 px-2.5 py-1.5 text-sky-200 flex items-center justify-between">
+                      <span>ทีมน้ำเงิน</span>
+                      <span className="font-mono tabular-nums">{standings.blue.memberCount} คน</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {roomState.players.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center px-3 py-10 border border-dashed border-slate-700 rounded-2xl space-y-1.5">
                   <p className="text-sm text-slate-300 font-semibold">
@@ -1179,8 +1273,11 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                             lazy
                           />
                           <div className="min-w-0">
-                            <div className="font-semibold text-sm text-white truncate">
-                              {p.name}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-semibold text-sm text-white truncate">
+                                {p.name}
+                              </span>
+                              {roomState.mode === 'team' && <TeamBadge team={p.team} compact />}
                             </div>
                             {poseMeta.id !== 'default' && (
                               <div className="text-[11px] text-indigo-300 truncate">
@@ -1212,6 +1309,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               <LobbyPoseStage
                 players={roomState.players}
                 roomCode={roomState.code}
+                mode={roomState.mode}
               />
             </div>
           </main>
@@ -1485,9 +1583,17 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               </div>
             </div>
 
+            {roomState.mode === 'team' && (
+              <TeamBattleBoard
+                players={roomState.players}
+                compact={true}
+              />
+            )}
+
             <LeaderboardStage
               players={roomState.players}
               totalQuestions={roomState.currentQuestionIndex + 1}
+              mode={roomState.mode}
               darkSurface={true}
             />
           </main>
@@ -1499,6 +1605,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             quizTitle={roomState.quizTitle}
             totalPlayers={roomState.totalPlayers}
             players={roomState.players}
+            mode={roomState.mode}
             muted={muted}
             onComplete={() => {
               void hostTransitionPhase({
@@ -1525,6 +1632,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 </h2>
                 <p className="text-sm text-slate-400">
                   {roomState.quizTitle} · ผู้เล่นทั้งหมด {roomState.totalPlayers} คน
+                  {roomState.mode === 'team' ? ' · โหมด Team Battle' : ''}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
@@ -1534,7 +1642,8 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                     const csv = exportResultsToCsv(
                       roomState.players,
                       roomState.quizTitle,
-                      roomState.totalQuestions
+                      roomState.totalQuestions,
+                      roomState.mode
                     );
                     downloadTextFile(`quiz-results-${roomState.code}.csv`, csv);
                   }}
@@ -1545,7 +1654,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleLaunchRoom(activeLiveQuiz)}
+                  onClick={() => void handleLaunchRoom(activeLiveQuiz, roomState.mode)}
                   className="min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold inline-flex items-center gap-2"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -1567,10 +1676,19 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
               </div>
             </div>
 
+            {roomState.mode === 'team' && (
+              <TeamBattleBoard
+                players={roomState.players}
+                showWinner={true}
+                showMvp={true}
+              />
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-7">
                 <PodiumStage
                   players={roomState.players}
+                  mode={roomState.mode}
                   fireworksBurstKey={fireworksBurstKey}
                   darkSurface={true}
                 />
@@ -1579,6 +1697,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 <LeaderboardStage
                   players={roomState.players}
                   totalQuestions={roomState.totalQuestions}
+                  mode={roomState.mode}
                   isFinal={true}
                   hidePodium={true}
                   darkSurface={true}
@@ -1785,13 +1904,52 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold text-slate-900">
-              ชุดคำถามของคุณ ({quizSets.length} ชุด)
-            </h2>
-            <span className="text-xs text-slate-500">
-              กดที่หน้าปกเพื่อเข้าไปสร้างหรือแก้ไขคำถามแต่ละข้อ
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900">
+                ชุดคำถามของคุณ ({quizSets.length} ชุด)
+              </h2>
+              <p className="text-xs text-slate-500">
+                กดที่หน้าปกเพื่อเข้าไปสร้างหรือแก้ไขคำถาม หรือเลือกโหมดก่อนกดเปิดห้องแข่ง
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+              <span className="text-xs font-bold text-slate-600">โหมดห้องแข่งขัน:</span>
+              <div
+                role="group"
+                aria-label="เลือกโหมดการเล่นสำหรับเปิดห้อง"
+                data-testid="room-mode-toggle"
+                className="inline-flex rounded-xl bg-white p-1 border border-slate-200 shadow-xs"
+              >
+                <button
+                  type="button"
+                  data-testid="room-mode-single"
+                  onClick={() => setSelectedRoomMode('single')}
+                  className={`min-h-[34px] px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                    selectedRoomMode === 'single'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>Single (เดี่ยว)</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="room-mode-team"
+                  onClick={() => setSelectedRoomMode('team')}
+                  className={`min-h-[34px] px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                    selectedRoomMode === 'team'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Swords className="w-3.5 h-3.5" />
+                  <span>Team Battle (2 ทีม)</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2023,6 +2181,39 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
             <Save className="w-3.5 h-3.5 text-indigo-600" />
             <span>{savingQuiz ? 'กำลังบันทึก...' : 'บันทึก'}</span>
           </button>
+          <div
+            role="group"
+            aria-label="เลือกโหมดการเล่นสำหรับเปิดห้อง"
+            data-testid="editor-room-mode-toggle"
+            className="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200 shrink-0"
+          >
+            <button
+              type="button"
+              data-testid="editor-room-mode-single"
+              onClick={() => setSelectedRoomMode('single')}
+              className={`min-h-[34px] px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors ${
+                selectedRoomMode === 'single'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Single</span>
+            </button>
+            <button
+              type="button"
+              data-testid="editor-room-mode-team"
+              onClick={() => setSelectedRoomMode('team')}
+              className={`min-h-[34px] px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors ${
+                selectedRoomMode === 'team'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Swords className="w-3.5 h-3.5" />
+              <span>Team Battle</span>
+            </button>
+          </div>
           <button
             type="button"
             data-testid="host-launch-room"

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Award, Flame, Search } from 'lucide-react';
-import { PlayerPublic } from '../shared/types';
+import { PlayerPublic, RoomMode } from '../shared/types';
 import { CuteAvatar } from './CuteAvatar';
 import { PodiumStage } from './PodiumStage';
+import { TeamBadge } from './TeamBattleBoard';
 
 interface LeaderboardStageProps {
   players: PlayerPublic[];
   totalQuestions: number;
+  mode?: RoomMode;
   highlightPlayerId?: string;
   isFinal?: boolean;
   hidePodium?: boolean;
@@ -17,6 +19,7 @@ interface LeaderboardStageProps {
 export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
   players,
   totalQuestions,
+  mode = 'single',
   highlightPlayerId,
   isFinal = false,
   hidePodium = false,
@@ -42,6 +45,7 @@ export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
       {isFinal && !hidePodium && top3.length > 0 && (
         <PodiumStage
           players={players}
+          mode={mode}
           fireworksBurstKey={fireworksBurstKey}
           darkSurface={darkSurface}
         />
@@ -113,10 +117,11 @@ export const LeaderboardStage: React.FC<LeaderboardStageProps> = ({
                     <CuteAvatar avatarId={p.avatarId} size={40} />
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className="font-bold text-sm sm:text-base truncate">
                           {p.name}
                         </span>
+                        {mode === 'team' && <TeamBadge team={p.team} compact />}
                         {isMe && (
                           <span className="text-xs font-semibold text-indigo-300 shrink-0">
                             (คุณ)

@@ -73,9 +73,14 @@ export interface QuizSet {
 
 export type RoomPhase = 'LOBBY' | 'QUESTION' | 'REVEAL' | 'LEADERBOARD' | 'SHOWCASE' | 'ENDED';
 
+export type RoomMode = 'single' | 'team';
+
+export type TeamId = 'red' | 'blue';
+
 export interface PlayerPublic {
   id: string;
   name: string;
+  team?: TeamId | null;
   avatarId: AvatarId;
   poseId?: string;
   score: number;
@@ -103,6 +108,7 @@ export interface PublicQuestionView {
 export interface RoomPublicState {
   code: string;
   quizTitle: string;
+  mode?: RoomMode;
   phase: RoomPhase;
   currentQuestionIndex: number;
   totalQuestions: number;

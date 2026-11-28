@@ -154,6 +154,11 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["single", "team"],
+          "description": "Game mode for the room (single or team battle)."
         }
       },
       "required": [
@@ -236,6 +241,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 24
+        },
+        "team": {
+          "type": "string",
+          "enum": ["red", "blue", null],
+          "description": "Assigned team in team battle mode."
         },
         "avatarId": {
           "type": "string",

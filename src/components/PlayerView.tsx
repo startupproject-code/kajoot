@@ -6,6 +6,7 @@ import {
   Flame,
   LogIn,
   LogOut,
+  Swords,
   Trophy,
   Users,
   Volume2,
@@ -36,6 +37,7 @@ import {
   AvatarId,
   AVATARS,
   MAX_PLAYERS_PER_ROOM,
+  RoomMode,
   RoomPhase,
 } from '../shared/types';
 import {
@@ -52,6 +54,7 @@ import { CuteAvatar } from './CuteAvatar';
 import { LeaderboardStage } from './LeaderboardStage';
 import { MediaStage } from './MediaStage';
 import { QrScannerModal } from './QrScannerModal';
+import { TeamBadge, TeamBattleBoard } from './TeamBattleBoard';
 
 interface PlayerViewProps {
   initialRoomCode?: string;
@@ -71,6 +74,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [roomCode, setRoomCode] = useState(initialRoomCode);
   const [verifiedHostUid, setVerifiedHostUid] = useState('');
   const [verifiedQuizTitle, setVerifiedQuizTitle] = useState('');
+  const [verifiedRoomMode, setVerifiedRoomMode] = useState<RoomMode>('single');
   const [playerName, setPlayerName] = useState('');
   const [avatarId, setAvatarId] = useState<AvatarId>('char_01');
   const [poseId, setPoseId] = useState<string>(DEFAULT_POSE_ID);
@@ -112,6 +116,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setRoomCode(res.code);
       setVerifiedHostUid(res.hostUid);
       setVerifiedQuizTitle(res.quizTitle || 'เกมตอบคำถามความรู้ทั่วไป');
+      setVerifiedRoomMode(res.mode === 'team' ? 'team' : 'single');
       setStep('SETUP_PROFILE');
     } catch (err) {
       setErrorMsg(
@@ -608,6 +613,12 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               <div className="text-xs font-bold text-emerald-600">
                 เข้าห้อง {roomCode} สำเร็จ · {verifiedQuizTitle}
               </div>
+              {verifiedRoomMode === 'team' && (
+                <div className="inline-flex items-center gap-1 rounded-lg bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-900">
+                  <Swords className="w-3.5 h-3.5" />
+                  <span>โหมด Team Battle (ระบบจะจัดทีมแดง/น้ำเงินให้อัตโนมัติ)</span>
+                </div>
+              )}
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
                 ตั้งชื่อและเลือกตัวละครของคุณ
               </h1>
@@ -709,8 +720,13 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             />
           )}
           <div className="min-w-0">
-            <div className="font-bold text-sm text-white truncate">
-              {me?.name || playerName}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-bold text-sm text-white truncate">
+                {me?.name || playerName}
+              </span>
+              {roomState.mode === 'team' && me?.team && (
+                <TeamBadge team={me.team} compact />
+              )}
             </div>
             <div className="text-xs text-slate-400 font-mono tabular-nums">
               ห้อง {roomState.code} · {me ? `${me.score.toLocaleString()} คะแนน` : ''}
@@ -775,6 +791,20 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
                   สวัสดี {me?.name || playerName}
                 </h1>
+                {roomState.mode === 'team' && (
+                  <div className="pt-1 flex justify-center">
+                    {me?.team ? (
+                      <div className="inline-flex items-center gap-2 rounded-xl bg-slate-900/80 border border-slate-700 px-3.5 py-1.5 text-sm font-bold text-slate-200">
+                        <span>คุณอยู่</span>
+                        <TeamBadge team={me.team} />
+                      </div>
+                    ) : (
+                      <span className="text-xs font-semibold text-amber-300">
+                        กำลังจัดทีม Team Battle แบบสมดุล...
+                      </span>
+                    )}
+                  </div>
+                )}
                 <p className="text-sm text-slate-300">
                   กรุณารอ Moderator กดเริ่มเกม... เตรียมนิ้วให้พร้อม!
                 </p>
@@ -921,7 +951,10 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             )}
 
             {me && (
-              <div className="pt-4 border-t border-white/10 flex items-center justify-center gap-6 text-sm text-slate-200">
+              <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-sm text-slate-200">
+                {roomState.mode === 'team' && me.team && (
+                  <TeamBadge team={me.team} />
+                )}
                 <div>
                   อันดับปัจจุบัน:{' '}
                   <span className="font-mono tabular-nums font-bold text-white">
@@ -963,9 +996,18 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             )}
           </div>
 
+          {roomState.mode === 'team' && (
+            <TeamBattleBoard
+              players={roomState.players}
+              myTeam={me?.team ?? null}
+              compact={true}
+            />
+          )}
+
           <LeaderboardStage
             players={roomState.players}
             totalQuestions={roomState.currentQuestionIndex + 1}
+            mode={roomState.mode}
             highlightPlayerId={guestPlayerId}
             darkSurface={true}
           />
@@ -983,13 +1025,16 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               <Trophy className="w-10 h-10 text-amber-400" />
             </div>
             {me && (
-              <div className="flex justify-center">
+              <div className="flex flex-col items-center gap-2">
                 <CuteAvatar
                   avatarId={me.avatarId}
                   poseId={me.poseId || poseId}
                   size={84}
                   className="ring-4 ring-amber-400/70 shadow-lg"
                 />
+                {roomState.mode === 'team' && me.team && (
+                  <TeamBadge team={me.team} />
+                )}
               </div>
             )}
             <div className="space-y-2">
@@ -997,7 +1042,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 อยู่ระหว่างประกาศผลรางวัล
               </h2>
               <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                รอติดตามการประกาศอันดับผู้ชนะบนหน้าจอหลักพร้อมกัน...
+                {roomState.mode === 'team'
+                  ? 'รอติดตามการประกาศอันดับผู้ชนะและสรุปผลทีมบนหน้าจอหลักพร้อมกัน...'
+                  : 'รอติดตามการประกาศอันดับผู้ชนะบนหน้าจอหลักพร้อมกัน...'}
               </p>
             </div>
           </div>
@@ -1016,7 +1063,10 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 <CuteAvatar avatarId={me.avatarId} size={64} className="ring-4 ring-indigo-400" />
                 <div>
                   <div className="text-xs font-bold text-indigo-300">สรุปผลงานของคุณ</div>
-                  <h2 className="text-xl font-extrabold text-white">{me.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-extrabold text-white">{me.name}</h2>
+                    {roomState.mode === 'team' && me.team && <TeamBadge team={me.team} />}
+                  </div>
                   <div className="text-sm text-slate-300">
                     ตอบถูก {me.correctCount}/{roomState.totalQuestions} ข้อ · ต่อเนื่องสูงสุด {me.bestStreak} ข้อ
                   </div>
@@ -1041,9 +1091,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             </section>
           )}
 
+          {roomState.mode === 'team' && (
+            <TeamBattleBoard
+              players={roomState.players}
+              showWinner={true}
+              showMvp={true}
+              myTeam={me?.team ?? null}
+            />
+          )}
+
           <LeaderboardStage
             players={roomState.players}
             totalQuestions={roomState.totalQuestions}
+            mode={roomState.mode}
             highlightPlayerId={guestPlayerId}
             isFinal={true}
             fireworksBurstKey={1}

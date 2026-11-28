@@ -94,6 +94,7 @@ export function validateRoomPayload(input: {
   roomCode: string;
   hostUid: string;
   phase: RoomPhase;
+  mode?: 'single' | 'team';
   currentQuestion: PublicQuestionView | null;
   totalPlayers: number;
   leaderboard: unknown[];
@@ -103,6 +104,9 @@ export function validateRoomPayload(input: {
   if (!isValidRoomCode(input.roomCode)) return { ok: false, reason: 'Invalid room code' };
   if (!isValidFirebaseId(input.hostUid) || input.hostUid !== input.authUid) {
     return { ok: false, reason: 'Host UID mismatch' };
+  }
+  if (input.mode !== undefined && input.mode !== 'single' && input.mode !== 'team') {
+    return { ok: false, reason: 'Invalid room mode' };
   }
   if (input.totalPlayers < 0 || input.totalPlayers > MAX_PLAYERS_PER_ROOM) {
     return { ok: false, reason: 'Player count out of bounds' };
@@ -127,6 +131,7 @@ export function validateRoomPlayerPayload(
     'roomCode',
     'hostUid',
     'name',
+    'team',
     'avatarId',
     'poseId',
     'score',
@@ -151,6 +156,9 @@ export function validateRoomPlayerPayload(
   }
   if (typeof data.name !== 'string' || data.name.length < 1 || data.name.length > MAX_PLAYER_NAME_LEN) {
     return { ok: false, reason: 'Invalid player name' };
+  }
+  if (data.team !== undefined && data.team !== null && data.team !== 'red' && data.team !== 'blue') {
+    return { ok: false, reason: 'Invalid player team' };
   }
   if (!isValidAvatarId(String(data.avatarId))) {
     return { ok: false, reason: 'Invalid avatar ID' };

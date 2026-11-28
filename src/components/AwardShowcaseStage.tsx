@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FastForward } from 'lucide-react';
-import { PlayerPublic } from '../shared/types';
+import { FastForward, Swords } from 'lucide-react';
+import { PlayerPublic, RoomMode } from '../shared/types';
 import {
   SHOWCASE_AUDIO,
   SHOWCASE_TIMINGS,
@@ -9,11 +9,13 @@ import {
   getPlacedPlacesForStep,
 } from '../utils/showcaseLogic';
 import { PodiumStage } from './PodiumStage';
+import { TeamBadge, TeamBattleBoard } from './TeamBattleBoard';
 
 interface AwardShowcaseStageProps {
   quizTitle: string;
   totalPlayers: number;
   players: PlayerPublic[];
+  mode?: RoomMode;
   muted: boolean;
   onComplete: () => void;
 }
@@ -28,6 +30,7 @@ export const AwardShowcaseStage: React.FC<AwardShowcaseStageProps> = ({
   quizTitle,
   totalPlayers,
   players,
+  mode = 'single',
   muted,
   onComplete,
 }) => {
@@ -188,20 +191,34 @@ export const AwardShowcaseStage: React.FC<AwardShowcaseStageProps> = ({
     () => getPlacedPlacesForStep(queue, queueIndex, currentSettled),
     [queue, queueIndex, currentSettled]
   );
+  const isTeamResultRevealed = Boolean(
+    mode === 'team' && currentEntry?.place === 1 && currentSettled
+  );
 
   return (
     <main
       data-testid="moderator-showcase-stage"
-      className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col gap-6"
+      className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col gap-5"
     >
       <audio ref={audioRef} preload="auto" className="hidden" />
 
       {/* Top Title Row matching mockup layout */}
       <div className="flex flex-wrap items-center justify-between gap-3 max-w-3xl w-full mx-auto">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
-            สรุปผลการแข่งขันทั้งหมด
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+              สรุปผลการแข่งขันทั้งหมด
+            </h2>
+            {mode === 'team' && (
+              <span
+                data-testid="showcase-team-mode-label"
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 border border-amber-400/50 px-2.5 py-0.5 text-xs font-extrabold text-amber-200"
+              >
+                <Swords className="w-3.5 h-3.5" />
+                <span>Team Battle</span>
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-400">
             {quizTitle} · ผู้เล่นทั้งหมด {totalPlayers} คน
           </p>
@@ -219,9 +236,10 @@ export const AwardShowcaseStage: React.FC<AwardShowcaseStageProps> = ({
       </div>
 
       {/* Centered Spotlight Podium Stage */}
-      <div className="w-full max-w-3xl mx-auto">
+      <div className="w-full max-w-3xl mx-auto space-y-4">
         <PodiumStage
           players={frozenPlayersRef.current}
+          mode={mode}
           visiblePlaces={visiblePlaces}
           dimmed={isAnnouncementActive}
           newlyRevealedPlace={newlyRevealedPlace}
@@ -229,7 +247,7 @@ export const AwardShowcaseStage: React.FC<AwardShowcaseStageProps> = ({
           hideEmptyHint={true}
           darkSurface={true}
         >
-          {/* Front-most Foreground Layer: Strictly 3 Announcement Lines */}
+          {/* Front-most Foreground Layer: Strictly 3 Announcement Lines (+ Team tag in Team Battle) */}
           {isAnnouncementActive && currentEntry && (
             <div
               data-testid="showcase-announcement-overlay"
@@ -254,21 +272,52 @@ export const AwardShowcaseStage: React.FC<AwardShowcaseStageProps> = ({
               </div>
 
               {/* Line 3: Largest (reserved space before beat drop + ~500ms) */}
-              <div className="min-h-[3.2rem] sm:min-h-[4.5rem] flex items-center justify-center max-w-full">
+              <div className="min-h-[3.2rem] sm:min-h-[4.5rem] flex flex-col items-center justify-center max-w-full gap-2">
                 {nameRevealed && (
-                  <div
-                    data-testid="showcase-line-3"
-                    className={`animate-showcase-name-slam text-4xl sm:text-6xl font-black tracking-tight leading-tight break-words max-w-full ${
-                      RANK_NAME_COLOR[currentEntry.place]
-                    }`}
-                  >
-                    {currentEntry.player.name}
-                  </div>
+                  <>
+                    <div
+                      data-testid="showcase-line-3"
+                      className={`animate-showcase-name-slam text-4xl sm:text-6xl font-black tracking-tight leading-tight break-words max-w-full ${
+                        RANK_NAME_COLOR[currentEntry.place]
+                      }`}
+                    >
+                      {currentEntry.player.name}
+                    </div>
+                    {mode === 'team' && currentEntry.player.team && (
+                      <TeamBadge
+                        team={currentEntry.player.team}
+                        className="animate-showcase-name-slam px-3 py-1 text-sm sm:text-base shadow-lg"
+                      />
+                    )}
+                  </>
                 )}
               </div>
             </div>
           )}
         </PodiumStage>
+
+        {/* Team Battle Summary & Winner Reveal (only when mode === 'team') */}
+        {mode === 'team' && (
+          isTeamResultRevealed ? (
+            <TeamBattleBoard
+              players={frozenPlayersRef.current}
+              showWinner={true}
+              showMvp={true}
+              title="สรุปผล Team Battle (ทีมแดง VS ทีมน้ำเงิน)"
+              compact={true}
+            />
+          ) : (
+            <div
+              data-testid="showcase-team-suspense"
+              className="rounded-2xl border border-slate-700/80 bg-slate-800/75 px-4 py-3 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-slate-300"
+            >
+              <Swords className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                โหมด Team Battle (ทีมแดง VS ทีมน้ำเงิน) · กำลังรอลุ้นผลรวมทีมชนะและ MVP หลังประกาศอันดับที่ 1
+              </span>
+            </div>
+          )
+        )}
       </div>
     </main>
   );

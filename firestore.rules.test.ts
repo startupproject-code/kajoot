@@ -369,4 +369,60 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.match(prodRules, /hasOnly\(\['name', 'avatarId', 'poseId', 'connected', 'updatedAt'\]\)/);
     assert.match(prodRules, /match \/players\/\{playerId\}[\s\S]*allow delete: if isVerifiedUser\(\)[\s\S]*existing\(\)\.hostUid == request\.auth\.uid;/);
   });
+
+  it('validates room mode (single/team) and player team (red/blue/null) with LOBBY-only team updates in both rules files', () => {
+    const prodRules = fs.readFileSync('firestore.rules', 'utf8');
+    assert.match(rulesText, /function isValidTeam\(team\)/);
+    assert.match(prodRules, /function isValidTeam\(team\)/);
+    assert.match(prodRules, /data\.mode in \['single', 'team'\]/);
+    assert.match(prodRules, /data\.phase == 'LOBBY'[\s\S]*affectedKeys\(\)\.hasOnly\(\['team', 'updatedAt'\]\)/);
+
+    const validTeamPlayer = validateRoomPlayerPayload(
+      {
+        id: 'p_123456789012',
+        uid: 'p_123456789012',
+        roomCode: '4829',
+        hostUid: 'host-1',
+        name: 'TeamRed',
+        team: 'red',
+        avatarId: 'char_01',
+        score: 0,
+        streak: 0,
+        bestStreak: 0,
+        correctCount: 0,
+        answeredCount: 0,
+        lastPoints: 0,
+        lastCorrect: null,
+        lastChoice: null,
+        rank: 1,
+        connected: true,
+      },
+      { authUid: 'p_123456789012', roomCode: '4829', totalPlayersInRoom: 1, isCreate: true }
+    );
+    assert.equal(validTeamPlayer.ok, true);
+
+    const invalidTeamPlayer = validateRoomPlayerPayload(
+      {
+        id: 'p_123456789012',
+        uid: 'p_123456789012',
+        roomCode: '4829',
+        hostUid: 'host-1',
+        name: 'BadTeam',
+        team: 'green',
+        avatarId: 'char_01',
+        score: 0,
+        streak: 0,
+        bestStreak: 0,
+        correctCount: 0,
+        answeredCount: 0,
+        lastPoints: 0,
+        lastCorrect: null,
+        lastChoice: null,
+        rank: 1,
+        connected: true,
+      },
+      { authUid: 'p_123456789012', roomCode: '4829', totalPlayersInRoom: 1, isCreate: true }
+    );
+    assert.equal(invalidTeamPlayer.ok, false);
+  });
 });

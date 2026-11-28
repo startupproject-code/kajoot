@@ -3,10 +3,14 @@ import express from "express";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import crypto2 from "crypto";
 import { WebSocketServer, WebSocket } from "ws";
 
+// src/server/roomManager.ts
+import crypto from "crypto";
+
 // src/shared/types.ts
-var MAX_PLAYERS_PER_ROOM = 200;
+var MAX_PLAYERS_PER_ROOM = 100;
 var AVATARS = [
   { id: "char_01", name: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E40\u0E02\u0E35\u0E22\u0E27", imagePath: "/assets/Profile/01_\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E27\u0E48\u0E19\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E40\u0E02\u0E35\u0E22\u0E27.webp", bgClass: "bg-sky-100", accentHex: "#0EA5E9" },
   { id: "char_02", name: "\u0E19\u0E49\u0E2D\u0E07\u0E42\u0E1A\u0E27\u0E4C\u0E0A\u0E21\u0E1E\u0E39", imagePath: "/assets/Profile/02_\u0E19\u0E49\u0E2D\u0E07\u0E42\u0E1A\u0E27\u0E4C\u0E0A\u0E21\u0E1E\u0E39.webp", bgClass: "bg-sky-100", accentHex: "#EC4899" },
@@ -93,6 +97,8 @@ function isValidRoomCode(code) {
 function isValidAvatarId(avatarId) {
   return AVATARS.some((a) => a.id === avatarId);
 }
+var MIN_CORRECT_ANSWER_POINTS = 50;
+var CORRECT_ORDER_PENALTY_STEP = 50;
 function calculatePoints(params) {
   if (!params.isCorrect) {
     return 0;
@@ -103,7 +109,26 @@ function calculatePoints(params) {
   const basePoints = 500;
   const speedBonus = Math.round(500 * ratio);
   const streakBonus = Math.min(250, Math.max(0, params.streak - 1) * 50);
-  return basePoints + speedBonus + streakBonus;
+  const rawPoints = basePoints + speedBonus + streakBonus;
+  const orderIndex = Math.max(0, Math.floor(params.correctOrderIndex ?? 0));
+  const orderPenalty = orderIndex * CORRECT_ORDER_PENALTY_STEP;
+  return Math.max(MIN_CORRECT_ANSWER_POINTS, rawPoints - orderPenalty);
+}
+function assignCorrectAnswerOrder(correctEntries) {
+  const sorted = [...correctEntries].sort((a, b) => {
+    if (a.answeredAtMs !== b.answeredAtMs) {
+      return a.answeredAtMs - b.answeredAtMs;
+    }
+    return a.playerId.localeCompare(b.playerId);
+  });
+  const orderMap = /* @__PURE__ */ new Map();
+  sorted.forEach((entry, idx) => {
+    orderMap.set(entry.playerId, idx);
+  });
+  return orderMap;
+}
+function isValidTeamId(team) {
+  return team === "red" || team === "blue";
 }
 function rankPlayers(players) {
   const sorted = [...players].sort((a, b) => {
@@ -115,6 +140,7 @@ function rankPlayers(players) {
   return sorted.map((p, index) => ({
     id: p.id,
     name: p.name,
+    ...isValidTeamId(p.team) ? { team: p.team } : {},
     avatarId: p.avatarId,
     ...p.poseId ? { poseId: p.poseId } : {},
     score: p.score,
@@ -147,7 +173,7 @@ var RoomManager = class {
     }
     const existing = new Set(this.rooms.keys());
     const code = generateRoomCode(existing);
-    const hostToken = `host-${Math.random().toString(36).slice(2)}-${now.toString(36)}`;
+    const hostToken = `host-${crypto.randomBytes(16).toString("hex")}`;
     const sanitizedQuiz = {
       id: quiz.id || `quiz-${now}`,
       title: (quiz.title || "\u0E40\u0E01\u0E21\u0E15\u0E2D\u0E1A\u0E04\u0E33\u0E16\u0E32\u0E21\u0E04\u0E27\u0E32\u0E21\u0E23\u0E39\u0E49\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B").trim(),
@@ -241,7 +267,7 @@ var RoomManager = class {
     if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
       throw new Error(`\u0E2B\u0E49\u0E2D\u0E07\u0E40\u0E15\u0E47\u0E21\u0E41\u0E25\u0E49\u0E27 (\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E40\u0E25\u0E48\u0E19\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14 ${MAX_PLAYERS_PER_ROOM} \u0E04\u0E19\u0E15\u0E48\u0E2D\u0E2B\u0E49\u0E2D\u0E07)`);
     }
-    const playerId = `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+    const playerId = `p-${crypto.randomBytes(12).toString("hex")}`;
     const player = {
       id: playerId,
       name: cleanName,
@@ -371,6 +397,9 @@ var RoomManager = class {
     const q = room.quiz.questions[room.currentQuestionIndex];
     const totalMs = q.timeLimitSec * 1e3;
     const endsAt = room.questionEndsAt ?? Date.now();
+    const correctOrderMap = assignCorrectAnswerOrder(
+      Array.from(room.answersThisQuestion.entries()).filter(([, sub]) => sub.choice === q.correctIndex).map(([playerId, sub]) => ({ playerId, answeredAtMs: sub.answeredAt }))
+    );
     for (const player of room.players.values()) {
       const submission = room.answersThisQuestion.get(player.id);
       if (!submission) {
@@ -390,7 +419,8 @@ var RoomManager = class {
           isCorrect: true,
           remainingMs,
           totalMs,
-          streak: player.streak
+          streak: player.streak,
+          correctOrderIndex: correctOrderMap.get(player.id) ?? 0
         });
         player.score += pts;
         player.lastPoints = pts;
@@ -487,6 +517,23 @@ var RoomManager = class {
 };
 
 // server.ts
+var ALLOWED_MEDIA_MIME_TYPES = /* @__PURE__ */ new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime"
+]);
+function isValidHostToken(expected, provided) {
+  if (!expected || typeof provided !== "string" || !provided) return false;
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto2.timingSafeEqual(a, b);
+}
 var portArgIdx = process.argv.indexOf("--port");
 var cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : NaN;
 var PORT = Number.isFinite(cliPort) ? cliPort : Number(process.env.PORT || 3e3);
@@ -510,10 +557,9 @@ app.post("/api/media", (req, res) => {
     res.status(400).json({ error: "\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07" });
     return;
   }
-  const mimeType = match[1];
-  const allowedPrefix = mimeType.startsWith("image/") || mimeType.startsWith("video/");
-  if (!allowedPrefix) {
-    res.status(400).json({ error: "\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E44\u0E1F\u0E25\u0E4C\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E\u0E2B\u0E23\u0E37\u0E2D\u0E27\u0E34\u0E14\u0E35\u0E42\u0E2D\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19" });
+  const mimeType = match[1].toLowerCase();
+  if (!ALLOWED_MEDIA_MIME_TYPES.has(mimeType)) {
+    res.status(400).json({ error: "\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E44\u0E1F\u0E25\u0E4C\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E (PNG/JPG/WebP/GIF) \u0E2B\u0E23\u0E37\u0E2D\u0E27\u0E34\u0E14\u0E35\u0E42\u0E2D (MP4/WebM/OGG) \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19" });
     return;
   }
   const buffer = Buffer.from(match[2], "base64");
@@ -525,17 +571,22 @@ app.post("/api/media", (req, res) => {
     const oldestKey = mediaStore.keys().next().value;
     if (oldestKey) mediaStore.delete(oldestKey);
   }
-  const id = `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const id = `m-${crypto2.randomBytes(8).toString("hex")}`;
   mediaStore.set(id, { mimeType, buffer, createdAt: Date.now() });
   res.json({ url: `/api/media/${id}` });
 });
 app.get("/api/media/:id", (req, res) => {
+  if (!/^m-[a-zA-Z0-9_-]{4,64}$/.test(req.params.id)) {
+    res.status(400).send("Invalid media id");
+    return;
+  }
   const item = mediaStore.get(req.params.id);
   if (!item) {
     res.status(404).send("Not found");
     return;
   }
   res.setHeader("Content-Type", item.mimeType);
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.send(item.buffer);
 });
@@ -728,7 +779,7 @@ function processClientMessage(msg, ctx, ws) {
     }
     case "host:reconnect": {
       const room = roomManager.getRoom(msg.code);
-      if (!room || room.hostToken !== msg.hostToken) {
+      if (!room || !isValidHostToken(room.hostToken, msg.hostToken)) {
         return { type: "error", message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2B\u0E49\u0E2D\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E42\u0E2E\u0E2A\u0E15\u0E4C\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38" };
       }
       if (ws && ctx.roomCode) {
@@ -748,7 +799,7 @@ function processClientMessage(msg, ctx, ws) {
         return { type: "error", message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E42\u0E2E\u0E2A\u0E15\u0E4C\u0E02\u0E2D\u0E07\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49" };
       }
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) {
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) {
         return { type: "error", message: "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E42\u0E2E\u0E2A\u0E15\u0E4C\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07" };
       }
       roomManager.startGame(ctx.roomCode);
@@ -759,7 +810,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:reveal": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.revealQuestion(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -768,7 +819,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:leaderboard": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.showLeaderboard(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -777,7 +828,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:next": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       const nextRoom = roomManager.nextQuestion(ctx.roomCode);
       if (nextRoom.phase === "QUESTION") {
@@ -789,7 +840,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:end": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.endGame(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -798,7 +849,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:restart": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.restartRoom(ctx.roomCode, msg.quiz);
       broadcastRoomState(ctx.roomCode);
@@ -807,7 +858,7 @@ function processClientMessage(msg, ctx, ws) {
     case "host:kick": {
       if (ctx.role !== "host" || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || ctx.hostToken && room.hostToken !== ctx.hostToken) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       if (roomManager.kickPlayer(ctx.roomCode, msg.playerId)) {
         broadcastRoomState(ctx.roomCode);
       }
@@ -881,7 +932,7 @@ app.get("/api/events", (req, res) => {
     res.status(404).json({ error: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2B\u0E49\u0E2D\u0E07\u0E41\u0E02\u0E48\u0E07\u0E02\u0E31\u0E19" });
     return;
   }
-  if (role === "host" && room.hostToken !== hostToken) {
+  if (role === "host" && !isValidHostToken(room.hostToken, hostToken)) {
     res.status(403).json({ error: "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E42\u0E2E\u0E2A\u0E15\u0E4C\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07" });
     return;
   }

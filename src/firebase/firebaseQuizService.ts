@@ -18,8 +18,11 @@ import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses'
 import {
   assignCorrectAnswerOrder,
   calculatePoints,
+  computeTeamRebalanceUpdates,
   generateRoomCode,
   isValidRoomCode,
+  isValidTeamId,
+  pickBalancedTeam,
   rankPlayers,
 } from '../shared/quizLogic';
 import {
@@ -38,8 +41,10 @@ import {
   PlayerPublic,
   PublicQuestionView,
   QuizSet,
+  RoomMode,
   RoomPhase,
   RoomPublicState,
+  TeamId,
 } from '../shared/types';
 import { db, firebaseRuntimeConfig, handleFirestoreError, OperationType } from './firebaseClient';
 
@@ -81,6 +86,7 @@ export interface FirestoreRoomDoc {
   code: string;
   hostUid: string;
   quizTitle: string;
+  mode?: RoomMode;
   phase: RoomPhase;
   currentQuestionIndex: number;
   totalQuestions: number;
@@ -102,6 +108,7 @@ export interface FirestorePlayerDoc {
   roomCode: string;
   hostUid: string;
   name: string;
+  team?: TeamId | null;
   avatarId: AvatarId;
   poseId?: string;
   score: number;
@@ -146,6 +153,7 @@ export function roomDocToPublicState(
   return {
     code: room.code,
     quizTitle: room.quizTitle,
+    mode: room.mode === 'team' ? 'team' : 'single',
     phase: room.phase,
     currentQuestionIndex: room.currentQuestionIndex,
     totalQuestions: room.totalQuestions,
@@ -297,12 +305,14 @@ export async function deleteQuizForUser(uid: string, quizId: string): Promise<vo
 // ===========================================================================
 export async function createFirebaseRoom(
   hostUid: string,
-  quizInput: QuizSet
-): Promise<{ code: string; quiz: QuizSet }> {
+  quizInput: QuizSet,
+  mode: RoomMode = 'single'
+): Promise<{ code: string; quiz: QuizSet; mode: RoomMode }> {
   const cleanQuiz = sanitizeQuizForFirebase(quizInput);
   if (cleanQuiz.questions.length === 0) {
     throw new Error('ชุดคำถามต้องมีอย่างน้อย 1 ข้อ');
   }
+  const safeMode: RoomMode = mode === 'team' ? 'team' : 'single';
 
   let chosenCode = '';
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -331,6 +341,7 @@ export async function createFirebaseRoom(
       code: chosenCode,
       hostUid,
       quizTitle: cleanQuiz.title,
+      mode: safeMode,
       phase: 'LOBBY',
       currentQuestionIndex: -1,
       totalQuestions: cleanQuiz.questions.length,
@@ -376,7 +387,7 @@ export async function createFirebaseRoom(
     handleFirestoreError(error, OperationType.CREATE, hostDataPath);
   }
 
-  return { code: chosenCode, quiz: cleanQuiz };
+  return { code: chosenCode, quiz: cleanQuiz, mode: safeMode };
 }
 
 export function subscribeHostRoom(
@@ -463,6 +474,42 @@ export async function syncHostRoomStats(params: {
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, roomPath);
   }
+}
+
+export async function hostRebalanceTeamsInLobby(params: {
+  code: string;
+  players: FirestorePlayerDoc[];
+}): Promise<FirestorePlayerDoc[]> {
+  const updates = computeTeamRebalanceUpdates(params.players);
+  if (updates.length === 0) return params.players;
+
+  const updateMap = new Map(updates.map((u) => [u.id, u.team]));
+  const updatedPlayers = params.players.map((p) =>
+    updateMap.has(p.id) ? { ...p, team: updateMap.get(p.id)! } : p
+  );
+  const ranked = rankPlayers(updatedPlayers);
+
+  const batch = writeBatch(db);
+  for (const u of updates) {
+    batch.update(doc(db, 'rooms', params.code, 'players', u.id), {
+      team: u.team,
+      updatedAt: serverTimestamp(),
+    });
+  }
+  batch.update(doc(db, 'rooms', params.code), {
+    totalPlayers: Math.min(MAX_PLAYERS_PER_ROOM, ranked.length),
+    leaderboard: ranked.slice(0, MAX_PLAYERS_PER_ROOM),
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    serverClock.beginWrite('room');
+    await batch.commit();
+    serverClock.finishWrite('room');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `rooms/${params.code}`);
+  }
+  return updatedPlayers;
 }
 
 export async function hostStartOrAdvanceQuestion(params: {
@@ -690,6 +737,7 @@ export async function checkFirebaseRoom(codeInput: string): Promise<{
   exists: boolean;
   hostUid?: string;
   quizTitle?: string;
+  mode?: RoomMode;
   totalPlayers?: number;
   maxPlayers: number;
   isFull?: boolean;
@@ -734,6 +782,7 @@ export async function checkFirebaseRoom(codeInput: string): Promise<{
       exists: true,
       hostUid: room.hostUid,
       quizTitle: room.quizTitle,
+      mode: room.mode === 'team' ? 'team' : 'single',
       totalPlayers: room.totalPlayers,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       isFull,
@@ -843,9 +892,16 @@ export async function joinFirebaseRoom(params: {
   const playerRef = doc(db, 'rooms', params.code, 'players', params.uid);
 
   try {
-    const existingSnap = await getDoc(playerRef);
+    const [existingSnap, roomSnap] = await Promise.all([
+      getDoc(playerRef),
+      getDoc(doc(db, 'rooms', params.code)),
+    ]);
+    const roomData = roomSnap.exists() ? (roomSnap.data() as FirestoreRoomDoc) : null;
+    const isTeamMode = roomData?.mode === 'team';
+
     serverClock.beginWrite('player');
     if (existingSnap.exists()) {
+      const existingData = existingSnap.data() as FirestorePlayerDoc;
       await updateDoc(playerRef, {
         name: cleanName,
         avatarId: params.avatarId,
@@ -853,13 +909,24 @@ export async function joinFirebaseRoom(params: {
         connected: true,
         updatedAt: serverTimestamp(),
       });
+      if (isTeamMode && roomData?.phase === 'LOBBY' && !isValidTeamId(existingData.team)) {
+        const assignedTeam = pickBalancedTeam(roomData.leaderboard ?? []);
+        await updateDoc(playerRef, {
+          team: assignedTeam,
+          updatedAt: serverTimestamp(),
+        });
+      }
     } else {
+      const assignedTeam = isTeamMode
+        ? pickBalancedTeam(roomData?.leaderboard ?? [])
+        : undefined;
       await setDoc(playerRef, {
         id: params.uid,
         uid: params.uid,
         roomCode: params.code,
         hostUid: params.hostUid,
         name: cleanName,
+        ...(assignedTeam ? { team: assignedTeam } : {}),
         avatarId: params.avatarId,
         poseId: safePoseId,
         score: 0,

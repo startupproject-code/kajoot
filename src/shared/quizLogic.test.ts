@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import {
   assignCorrectAnswerOrder,
   calculatePoints,
+  computeTeamRebalanceUpdates,
+  computeTeamStandings,
   exportQuizToCsv,
   exportResultsToCsv,
   generateRoomCode,
   parseQuizCsv,
   parseVideoEmbed,
+  pickBalancedTeam,
   rankPlayers,
   sanitizeSafeMediaUrl,
 } from './quizLogic';
@@ -217,3 +220,92 @@ test('exportResultsToCsv neutralizes spreadsheet formula prefixes', () => {
   assert.ok(csvOut.includes("'=HYPERLINK"));
   assert.ok(csvOut.includes("'+SUM(1,2)"));
 });
+
+test('pickBalancedTeam and computeTeamRebalanceUpdates keep teams balanced', () => {
+  assert.equal(pickBalancedTeam([]), 'red');
+  assert.equal(pickBalancedTeam([{ team: 'red' }]), 'blue');
+  assert.equal(pickBalancedTeam([{ team: 'red' }, { team: 'blue' }]), 'red');
+
+  const updates = computeTeamRebalanceUpdates([
+    { id: 'p1', team: 'red' },
+    { id: 'p2', team: 'red' },
+    { id: 'p3', team: 'red' },
+    { id: 'p4', team: null },
+  ]);
+  // p4 goes to blue (red=3, blue=1), then p3 moves to blue -> red=2, blue=2
+  assert.deepEqual(updates, [
+    { id: 'p3', team: 'blue' },
+    { id: 'p4', team: 'blue' },
+  ]);
+});
+
+test('rankPlayers preserves team field and computeTeamStandings sums team scores and MVP', () => {
+  const ranked = rankPlayers([
+    {
+      id: 'p1',
+      name: 'แดงหนึ่ง',
+      team: 'red',
+      avatarId: 'char_01',
+      score: 1200,
+      streak: 1,
+      bestStreak: 1,
+      correctCount: 2,
+      answeredCount: 3,
+      lastPoints: 500,
+      lastCorrect: true,
+      lastChoice: 0,
+      connected: true,
+    },
+    {
+      id: 'p2',
+      name: 'น้ำเงินหนึ่ง',
+      team: 'blue',
+      avatarId: 'char_02',
+      score: 1900,
+      streak: 2,
+      bestStreak: 2,
+      correctCount: 2,
+      answeredCount: 3,
+      lastPoints: 950,
+      lastCorrect: true,
+      lastChoice: 0,
+      connected: true,
+    },
+    {
+      id: 'p3',
+      name: 'แดงสอง',
+      team: 'red',
+      avatarId: 'char_03',
+      score: 900,
+      streak: 1,
+      bestStreak: 1,
+      correctCount: 1,
+      answeredCount: 3,
+      lastPoints: 400,
+      lastCorrect: false,
+      lastChoice: 1,
+      connected: true,
+    },
+  ]);
+
+  assert.equal(ranked[0].team, 'blue');
+  assert.equal(ranked[1].team, 'red');
+
+  const summary = computeTeamStandings(ranked);
+  assert.equal(summary.red.totalScore, 2100);
+  assert.equal(summary.red.memberCount, 2);
+  assert.equal(summary.blue.totalScore, 1900);
+  assert.equal(summary.blue.memberCount, 1);
+  assert.equal(summary.winner, 'red');
+  assert.equal(summary.scoreDiff, 200);
+  assert.equal(summary.mvp?.id, 'p2');
+
+  const teamCsv = exportResultsToCsv(ranked, 'ศึกชิงทีม', 3, 'team');
+  assert.ok(teamCsv.includes(',ทีม,'));
+  assert.ok(teamCsv.includes('ทีมแดง'));
+  assert.ok(teamCsv.includes('สรุปคะแนนทีม'));
+
+  const singleCsv = exportResultsToCsv(ranked, 'ศึกเดี่ยว', 3, 'single');
+  assert.equal(singleCsv.includes('สรุปคะแนนทีม'), false);
+});
+

@@ -62,6 +62,10 @@ service cloud.firestore {
       ];
     }
 
+    function isValidTeam(team) {
+      return team == null || (team is string && team.size() >= 3 && team.size() <= 10 && team in ['red', 'blue']);
+    }
+
     function isSafeMediaUrl(url, allowEmpty) {
       return url is string && (
         (allowEmpty && url == '') ||
@@ -129,7 +133,7 @@ service cloud.firestore {
           'code', 'hostUid', 'quizTitle', 'phase', 'currentQuestionIndex',
           'totalQuestions', 'currentQuestion', 'questionStartedAt', 'questionEndsAt',
           'answeredCount', 'totalPlayers', 'maxPlayers', 'answerCounts', 'leaderboard',
-          'createdAt', 'updatedAt'
+          'createdAt', 'updatedAt', 'mode'
         ])
         && data.code is string && data.code.size() == 4 && data.code == roomCode
         && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
@@ -165,7 +169,8 @@ service cloud.firestore {
           && data.leaderboard[0].score is int && data.leaderboard[0].score >= 0
         ))
         && data.createdAt is timestamp
-        && data.updatedAt is timestamp;
+        && data.updatedAt is timestamp
+        && (!('mode' in data) || (data.mode is string && data.mode.size() >= 4 && data.mode.size() <= 10 && data.mode in ['single', 'team']));
     }
 
     function isValidRoomHostData(data, roomCode) {
@@ -190,7 +195,7 @@ service cloud.firestore {
           'id', 'uid', 'roomCode', 'hostUid', 'name', 'avatarId', 'poseId',
           'score', 'streak', 'bestStreak', 'correctCount', 'answeredCount',
           'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'connected',
-          'joinedAt', 'updatedAt'
+          'joinedAt', 'updatedAt', 'team'
         ])
         && data.id is string && data.id.size() >= 12 && data.id.size() <= 128 && data.id == playerId
         && data.uid is string && data.uid.size() >= 12 && data.uid.size() <= 128 && data.uid == playerId
@@ -210,7 +215,8 @@ service cloud.firestore {
         && data.rank is int && data.rank >= 1 && data.rank <= 100
         && data.connected is bool
         && data.joinedAt is timestamp
-        && data.updatedAt is timestamp;
+        && data.updatedAt is timestamp
+        && (!('team' in data) || isValidTeam(data.team));
     }
 
     function isValidRoomAnswer(data, roomCode, answerId) {
@@ -380,10 +386,20 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase != 'ENDED'
           && (
+            // Tier 1: Verified Host updates player score, streak, and rank
             (isVerifiedUser()
               && existing().hostUid == request.auth.uid
               && incoming().diff(existing()).affectedKeys().hasOnly(['score', 'streak', 'bestStreak', 'correctCount', 'answeredCount', 'lastPoints', 'lastCorrect', 'lastChoice', 'rank', 'updatedAt'])) ||
-            (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'poseId', 'connected', 'updatedAt']))
+            // Tier 1b: Verified Host updates team only during LOBBY
+            (isVerifiedUser()
+              && existing().hostUid == request.auth.uid
+              && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase == 'LOBBY'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['team', 'updatedAt'])) ||
+            // Tier 2: Guest player updates own display profile & connection status
+            (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarId', 'poseId', 'connected', 'updatedAt'])) ||
+            // Tier 2b: Guest player updates own team only during LOBBY
+            (get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase == 'LOBBY'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['team', 'updatedAt']))
           );
 
         allow delete: if isVerifiedUser()

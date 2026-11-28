@@ -1,17 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
 import { resolvePlayerPoseImage } from '../shared/characterPoses';
-import { PlayerPublic } from '../shared/types';
+import { PlayerPublic, RoomMode } from '../shared/types';
 import {
   LOBBY_CAROUSEL_INTERVAL_MS,
   MAX_LOBBY_CARDS_PER_ROW,
   getWindowedCarouselItems,
   partitionLobbyPlayers,
 } from '../utils/lobbyPoseLogic';
+import { TeamBadge } from './TeamBattleBoard';
 
 interface LobbyPoseStageProps {
   players: PlayerPublic[];
   roomCode: string;
+  mode?: RoomMode;
 }
 
 const CAROUSEL_CARD_STEP_PX = 162; // 150px card + 12px gap
@@ -19,11 +21,13 @@ const CAROUSEL_CARD_STEP_PX = 162; // 150px card + 12px gap
 interface PoseCardProps {
   player: PlayerPublic;
   sizeClass?: string;
+  mode?: RoomMode;
 }
 
 const PoseCard: React.FC<PoseCardProps> = React.memo(({
   player,
   sizeClass = 'w-[150px]',
+  mode = 'single',
 }) => {
   const poseMeta = resolvePlayerPoseImage(player.avatarId, player.poseId);
   const [imgFailed, setImgFailed] = useState(false);
@@ -59,6 +63,11 @@ const PoseCard: React.FC<PoseCardProps> = React.memo(({
         <div className="text-sm font-extrabold text-white truncate">
           {player.name}
         </div>
+        {mode === 'team' && player.team && (
+          <div className="mt-0.5 flex justify-center">
+            <TeamBadge team={player.team} compact />
+          </div>
+        )}
         {poseMeta.id !== 'default' && (
           <div className="text-[11px] font-medium text-indigo-300 truncate">
             {poseMeta.label}
@@ -74,6 +83,7 @@ interface SlidingCarouselRowProps {
   direction: 'right' | 'left';
   tick: number;
   testId: string;
+  mode?: RoomMode;
 }
 
 const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
@@ -81,6 +91,7 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
   direction,
   tick,
   testId,
+  mode = 'single',
 }) => {
   const [shiftPx, setShiftPx] = useState(0);
   const [animateTransition, setAnimateTransition] = useState(false);
@@ -165,7 +176,7 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
         }}
       >
         {visiblePlayers.map((p) => (
-          <PoseCard key={p.id} player={p} sizeClass="w-[150px]" />
+          <PoseCard key={p.id} player={p} sizeClass="w-[150px]" mode={mode} />
         ))}
       </div>
     </div>
@@ -175,6 +186,7 @@ const SlidingCarouselRow: React.FC<SlidingCarouselRowProps> = ({
 export const LobbyPoseStage: React.FC<LobbyPoseStageProps> = ({
   players,
   roomCode,
+  mode = 'single',
 }) => {
   const partitioned = useMemo(() => partitionLobbyPlayers(players), [players]);
   const [tick, setTick] = useState(0);
@@ -225,7 +237,7 @@ export const LobbyPoseStage: React.FC<LobbyPoseStageProps> = ({
           className="flex-1 flex flex-wrap items-center justify-center gap-4 py-4"
         >
           {partitioned.topRow.map((p) => (
-            <PoseCard key={p.id} player={p} sizeClass="w-[168px] sm:w-[184px]" />
+            <PoseCard key={p.id} player={p} sizeClass="w-[168px] sm:w-[184px]" mode={mode} />
           ))}
         </div>
       )}
@@ -236,7 +248,7 @@ export const LobbyPoseStage: React.FC<LobbyPoseStageProps> = ({
           className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3.5 content-start max-h-[470px] overflow-y-auto pr-1 py-1"
         >
           {partitioned.topRow.map((p) => (
-            <PoseCard key={p.id} player={p} sizeClass="w-full" />
+            <PoseCard key={p.id} player={p} sizeClass="w-full" mode={mode} />
           ))}
         </div>
       )}
@@ -259,6 +271,7 @@ export const LobbyPoseStage: React.FC<LobbyPoseStageProps> = ({
               direction="right"
               tick={tick}
               testId="lobby-pose-row-top"
+              mode={mode}
             />
           </div>
 
@@ -275,6 +288,7 @@ export const LobbyPoseStage: React.FC<LobbyPoseStageProps> = ({
               direction="left"
               tick={tick}
               testId="lobby-pose-row-bottom"
+              mode={mode}
             />
           </div>
         </div>

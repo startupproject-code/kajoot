@@ -6,14 +6,16 @@ import {
   SHOWCASE_AUDIO,
   SHOWCASE_TIMINGS,
   buildShowcaseQueue,
+  buildShowcaseTeamSummary,
   getPlacedPlacesForStep,
   getShowcaseAudioForPlace,
 } from './showcaseLogic';
 
-function makePlayer(idx: number, score: number): PlayerPublic {
+function makePlayer(idx: number, score: number, team?: 'red' | 'blue'): PlayerPublic {
   return {
     id: `p_${idx}`,
     name: `Player ${idx}`,
+    ...(team ? { team } : {}),
     avatarId: 'char_01',
     poseId: 'default',
     score,
@@ -95,4 +97,28 @@ describe('showcaseLogic', () => {
     assert.deepEqual(getPlacedPlacesForStep(queue, 2, false), [3, 2]);
     assert.deepEqual(getPlacedPlacesForStep(queue, 2, true), [3, 2, 1]);
   });
+
+  it('computes team battle showcase summary for red win, blue win, tie, and MVP without altering timings', () => {
+    const blueWins = buildShowcaseTeamSummary([
+      makePlayer(1, 3200, 'red'),
+      makePlayer(2, 2400, 'blue'),
+      makePlayer(3, 1900, 'blue'),
+    ]);
+    assert.equal(blueWins.winner, 'blue');
+    assert.equal(blueWins.blue.totalScore, 4300);
+    assert.equal(blueWins.red.totalScore, 3200);
+    assert.equal(blueWins.scoreDiff, 1100);
+    assert.equal(blueWins.mvp?.id, 'p_1');
+    assert.equal(blueWins.mvp?.team, 'red');
+
+    const tied = buildShowcaseTeamSummary([
+      makePlayer(1, 2000, 'red'),
+      makePlayer(2, 2000, 'blue'),
+    ]);
+    assert.equal(tied.winner, 'tie');
+    assert.equal(tied.scoreDiff, 0);
+    assert.equal(tied.mvp?.id, 'p_1');
+    assert.equal(SHOWCASE_TIMINGS.RANK_1_CELEBRATION_MS, 3800);
+  });
 });
+

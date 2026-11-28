@@ -1,3 +1,4 @@
+import { computeTeamStandings, TeamStandingsSummary } from '../shared/quizLogic';
 import { PlayerPublic } from '../shared/types';
 
 export type ShowcasePlace = 1 | 2 | 3;
@@ -79,4 +80,8 @@ export function getPlacedPlacesForStep(
     }
   }
   return places;
+}
+
+export function buildShowcaseTeamSummary(players: PlayerPublic[]): TeamStandingsSummary {
+  return computeTeamStandings(players);
 }

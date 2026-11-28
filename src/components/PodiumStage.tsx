@@ -5,11 +5,13 @@ import {
   PODIUM_STAGE_IMAGE,
   resolvePodiumCharacterAsset,
 } from '../shared/podiumAssets';
-import { AVATARS, PlayerPublic } from '../shared/types';
+import { AVATARS, PlayerPublic, RoomMode } from '../shared/types';
 import { FireworksOverlay } from './FireworksOverlay';
+import { TeamBadge } from './TeamBattleBoard';
 
 interface PodiumStageProps {
   players: PlayerPublic[];
+  mode?: RoomMode;
   fireworksBurstKey?: number;
   darkSurface?: boolean;
   visiblePlaces?: Array<1 | 2 | 3>;
@@ -65,6 +67,7 @@ const PEDESTAL_SLOTS: PedestalSlotConfig[] = [
 
 export const PodiumStage: React.FC<PodiumStageProps> = ({
   players,
+  mode = 'single',
   fireworksBurstKey = 0,
   darkSurface = true,
   visiblePlaces,
@@ -217,9 +220,15 @@ export const PodiumStage: React.FC<PodiumStageProps> = ({
                 <div className="font-extrabold text-[11px] sm:text-sm text-white truncate">
                   {player.name}
                 </div>
-                <div className="hidden sm:block text-[10px] text-slate-400 truncate">
-                  {avatarMeta.name}
-                </div>
+                {mode === 'team' && player.team ? (
+                  <div className="flex justify-center my-0.5">
+                    <TeamBadge team={player.team} compact />
+                  </div>
+                ) : (
+                  <div className="hidden sm:block text-[10px] text-slate-400 truncate">
+                    {avatarMeta.name}
+                  </div>
+                )}
                 <div
                   className={`font-mono tabular-nums font-extrabold text-[11px] sm:text-sm leading-tight ${slot.scoreClass}`}
                 >
