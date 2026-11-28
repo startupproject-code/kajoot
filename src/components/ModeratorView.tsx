@@ -39,6 +39,7 @@ import {
   FirestoreAnswerDoc,
   FirestorePlayerDoc,
   FirestoreRoomDoc,
+  getSyncedServerNowMs,
   hostKickFirebasePlayer,
   hostPruneDisconnectedPlayers,
   hostRevealCurrentQuestion,
@@ -77,6 +78,7 @@ import {
   PlayerPresenceTracker,
   computeRemainingQuestionStats,
 } from '../utils/playerPresenceLogic';
+import { computeNextCountdownTickDelayMs } from '../utils/questionTimerSync';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { AwardShowcaseStage } from './AwardShowcaseStage';
@@ -196,7 +198,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [playersDocs, setPlayersDocs] = useState<FirestorePlayerDoc[]>([]);
   const [answersDocs, setAnswersDocs] = useState<FirestoreAnswerDoc[]>([]);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => getSyncedServerNowMs());
 
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -292,15 +294,34 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
     return () => unsub();
   }, [authReady, user, activeRoomCode]);
 
-  // Live 250ms countdown clock for QUESTION phase
+  // Server-synced boundary-aligned countdown clock for QUESTION phase
   useEffect(() => {
-    if (!roomDoc || roomDoc.phase !== 'QUESTION') return;
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
+    if (!roomDoc || roomDoc.phase !== 'QUESTION' || !roomDoc.questionEndsAt) return;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    const endsAt = roomDoc.questionEndsAt;
+    const timeLimitSec = roomDoc.currentQuestion?.timeLimitSec ?? 180;
+
+    const scheduleNextTick = () => {
+      if (cancelled) return;
+      const syncedNow = getSyncedServerNowMs();
+      setNowMs(syncedNow);
+      const delayMs = computeNextCountdownTickDelayMs(endsAt, syncedNow, timeLimitSec);
+      if (delayMs === null) return;
+      timeoutId = window.setTimeout(scheduleNextTick, delayMs);
+    };
+
+    scheduleNextTick();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [
+    roomDoc?.phase,
+    roomDoc?.currentQuestionIndex,
+    roomDoc?.questionEndsAt,
+    roomDoc?.currentQuestion?.timeLimitSec,
+  ]);
 
   const roomState = useMemo(() => {
     if (!roomDoc) return null;
@@ -1681,7 +1702,7 @@ export const ModeratorView: React.FC<ModeratorViewProps> = ({ onBackHome }) => {
                 คลังชุดคำถามสำหรับ Moderator
               </h1>
               <p className="text-xs text-slate-500 truncate">
-                คลิกที่หน้าปกชุดคำถามเพื่อสร้าง แก้ไขคำถาม หรือเปิดห้องแข่งขัน (สูงสุด 200 คน/ห้อง)
+                คลิกที่หน้าปกชุดคำถามเพื่อสร้าง แก้ไขคำถาม หรือเปิดห้องแข่งขัน (สูงสุด {MAX_PLAYERS_PER_ROOM} คน/ห้อง)
               </p>
             </div>
           </div>

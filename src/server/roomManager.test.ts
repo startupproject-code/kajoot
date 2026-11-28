@@ -4,7 +4,7 @@ import { RoomManager } from './roomManager';
 import { DEFAULT_QUIZ } from '../shared/defaultQuiz';
 import { MAX_PLAYERS_PER_ROOM } from '../shared/types';
 
-test('RoomManager supports up to 200 players and rejects the 201st player', () => {
+test('RoomManager supports up to 100 players and rejects the 101st player', () => {
   const manager = new RoomManager();
   const room = manager.createRoom(DEFAULT_QUIZ, 1000);
 
@@ -17,7 +17,7 @@ test('RoomManager supports up to 200 players and rejects the 201st player', () =
     assert.ok(joined.player.id);
   }
 
-  assert.equal(room.players.size, 200);
+  assert.equal(room.players.size, 100);
   const status = manager.checkRoomStatus(room.code);
   assert.equal(status.isFull, true);
 
@@ -25,10 +25,10 @@ test('RoomManager supports up to 200 players and rejects the 201st player', () =
     () =>
       manager.joinPlayer({
         code: room.code,
-        name: 'คนที่ 201',
+        name: 'คนที่ 101',
         avatarId: 'char_02',
       }),
-    /200/
+    /100/
   );
 });
 
@@ -74,6 +74,40 @@ test('RoomManager runs full quiz lifecycle, hides correctIndex during QUESTION, 
 
   manager.endGame(room.code);
   assert.equal(room.phase, 'ENDED');
+});
+
+test('RoomManager deducts 50 points for each subsequent correct responder', () => {
+  const manager = new RoomManager();
+  const room = manager.createRoom(DEFAULT_QUIZ, 1000);
+
+  const p1 = manager.joinPlayer({ code: room.code, name: 'คนที่หนึ่ง', avatarId: 'char_01' });
+  const p2 = manager.joinPlayer({ code: room.code, name: 'คนที่สอง', avatarId: 'char_02' });
+  const p3 = manager.joinPlayer({ code: room.code, name: 'คนที่สาม', avatarId: 'char_03' });
+  const pWrong = manager.joinPlayer({ code: room.code, name: 'ตอบผิดก่อน', avatarId: 'char_04' });
+
+  manager.startGame(room.code, 2000);
+  const correctChoice = DEFAULT_QUIZ.questions[0].correctIndex;
+  const wrongChoice = ((correctChoice + 1) % 4) as 0 | 1 | 2 | 3;
+
+  // Wrong answer first should NOT penalize the 1st correct responder
+  manager.submitAnswer(room.code, pWrong.player.id, wrongChoice, 2100);
+  manager.submitAnswer(room.code, p1.player.id, correctChoice, 2200);
+  manager.submitAnswer(room.code, p2.player.id, correctChoice, 2200);
+  manager.submitAnswer(room.code, p3.player.id, correctChoice, 2200);
+
+  // Use deterministic playerId ordering when answeredAtMs is identical
+  const sortedCorrectIds = [p1.player.id, p2.player.id, p3.player.id].sort((a, b) =>
+    a.localeCompare(b)
+  );
+  manager.revealQuestion(room.code);
+
+  const first = room.players.get(sortedCorrectIds[0])!;
+  const second = room.players.get(sortedCorrectIds[1])!;
+  const third = room.players.get(sortedCorrectIds[2])!;
+
+  assert.equal(first.lastPoints - second.lastPoints, 50);
+  assert.equal(second.lastPoints - third.lastPoints, 50);
+  assert.equal(room.players.get(pWrong.player.id)!.lastPoints, 0);
 });
 
 test('RoomManager updates player poseId and kicks absent players cleanly', () => {

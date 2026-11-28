@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assignCorrectAnswerOrder,
   calculatePoints,
   exportQuizToCsv,
   exportResultsToCsv,
@@ -8,6 +9,7 @@ import {
   parseQuizCsv,
   parseVideoEmbed,
   rankPlayers,
+  sanitizeSafeMediaUrl,
 } from './quizLogic';
 import { DEFAULT_QUIZ, SAMPLE_CSV_TEMPLATE } from './defaultQuiz';
 
@@ -18,13 +20,33 @@ test('generateRoomCode creates unique 4-digit codes', () => {
   assert.equal(existing.has(code), false);
 });
 
-test('calculatePoints rewards accuracy, speed, and streak', () => {
+test('calculatePoints rewards accuracy, speed, streak, and deducts 50 per subsequent correct respondent', () => {
   assert.equal(
     calculatePoints({ isCorrect: false, remainingMs: 15000, totalMs: 20000, streak: 3 }),
     0
   );
 
-  const fast = calculatePoints({ isCorrect: true, remainingMs: 20000, totalMs: 20000, streak: 1 });
+  const fastFirst = calculatePoints({
+    isCorrect: true,
+    remainingMs: 20000,
+    totalMs: 20000,
+    streak: 1,
+    correctOrderIndex: 0,
+  });
+  const second = calculatePoints({
+    isCorrect: true,
+    remainingMs: 20000,
+    totalMs: 20000,
+    streak: 1,
+    correctOrderIndex: 1,
+  });
+  const third = calculatePoints({
+    isCorrect: true,
+    remainingMs: 20000,
+    totalMs: 20000,
+    streak: 1,
+    correctOrderIndex: 2,
+  });
   const slow = calculatePoints({ isCorrect: true, remainingMs: 2000, totalMs: 20000, streak: 1 });
   const streakBonus = calculatePoints({
     isCorrect: true,
@@ -32,10 +54,31 @@ test('calculatePoints rewards accuracy, speed, and streak', () => {
     totalMs: 20000,
     streak: 3,
   });
+  const floored = calculatePoints({
+    isCorrect: true,
+    remainingMs: 0,
+    totalMs: 20000,
+    streak: 1,
+    correctOrderIndex: 25,
+  });
 
-  assert.equal(fast, 1000);
-  assert.ok(fast > slow);
+  assert.equal(fastFirst, 1000);
+  assert.equal(second, 950);
+  assert.equal(third, 900);
+  assert.ok(fastFirst > slow);
   assert.equal(streakBonus, 1100);
+  assert.equal(floored, 50);
+});
+
+test('assignCorrectAnswerOrder ranks earliest correct respondents starting at 0', () => {
+  const order = assignCorrectAnswerOrder([
+    { playerId: 'p_c', answeredAtMs: 5000 },
+    { playerId: 'p_a', answeredAtMs: 2000 },
+    { playerId: 'p_b', answeredAtMs: 3500 },
+  ]);
+  assert.equal(order.get('p_a'), 0);
+  assert.equal(order.get('p_b'), 1);
+  assert.equal(order.get('p_c'), 2);
 });
 
 test('parseQuizCsv parses Thai questions, quoted commas, and A-D / 1-4 answers', () => {
@@ -122,4 +165,55 @@ test('parseVideoEmbed handles YouTube and direct video URLs', () => {
     src: '/api/media/clip123',
   });
   assert.deepEqual(parseVideoEmbed(''), { type: 'none', src: '' });
+  assert.deepEqual(parseVideoEmbed('javascript:alert(1)'), { type: 'none', src: '' });
+  assert.deepEqual(parseVideoEmbed('https://youtube.com/watch?v=../../evil'), {
+    type: 'video',
+    src: 'https://youtube.com/watch?v=../../evil',
+  });
+});
+
+test('sanitizeSafeMediaUrl blocks javascript: and SVG data URLs while preserving safe assets', () => {
+  assert.equal(sanitizeSafeMediaUrl('javascript:alert(1)', 'image'), '');
+  assert.equal(
+    sanitizeSafeMediaUrl('data:image/svg+xml;base64,PHN2Zz4=', 'image'),
+    ''
+  );
+  assert.equal(
+    sanitizeSafeMediaUrl('data:image/webp;base64,UklGRg==', 'image'),
+    'data:image/webp;base64,UklGRg=='
+  );
+  assert.equal(
+    sanitizeSafeMediaUrl('/assets/profile/01.webp', 'image'),
+    '/assets/profile/01.webp'
+  );
+  assert.equal(
+    sanitizeSafeMediaUrl('https://cdn.example.com/pic.png', 'image'),
+    'https://cdn.example.com/pic.png'
+  );
+});
+
+test('exportResultsToCsv neutralizes spreadsheet formula prefixes', () => {
+  const csvOut = exportResultsToCsv(
+    [
+      {
+        id: 'p1',
+        name: '=HYPERLINK("http://bad","x")',
+        avatarId: 'char_01',
+        score: 1000,
+        streak: 1,
+        bestStreak: 1,
+        correctCount: 1,
+        answeredCount: 1,
+        lastPoints: 1000,
+        lastCorrect: true,
+        lastChoice: 0,
+        rank: 1,
+        connected: true,
+      },
+    ],
+    '+SUM(1,2)',
+    1
+  );
+  assert.ok(csvOut.includes("'=HYPERLINK"));
+  assert.ok(csvOut.includes("'+SUM(1,2)"));
 });

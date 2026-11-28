@@ -1,4 +1,4 @@
-export const MAX_PLAYERS_PER_ROOM = 200;
+export const MAX_PLAYERS_PER_ROOM = 100;
 
 export type AvatarId =
   | 'char_01'

@@ -68,12 +68,12 @@ describe('lobbyPoseLogic', () => {
     assert.deepEqual(rotateItems(arr, 1), ['B', 'C', 'D', 'A']);
   });
 
-  it('virtualizes 200 players to at most 20 DOM cards (10 per row) and cycles all items over ticks', () => {
-    const players = Array.from({ length: 200 }, (_, i) => makePlayer(i + 1));
+  it('virtualizes 100 players to at most 20 DOM cards (10 per row) and cycles all items over ticks', () => {
+    const players = Array.from({ length: 100 }, (_, i) => makePlayer(i + 1));
     const res = partitionLobbyPlayers(players);
     assert.equal(res.mode, 'dual_carousel');
-    assert.equal(res.topRow.length, 100);
-    assert.equal(res.bottomRow.length, 100);
+    assert.equal(res.topRow.length, 50);
+    assert.equal(res.bottomRow.length, 50);
 
     const topWindow0 = getWindowedCarouselItems(res.topRow, 0);
     const bottomWindow0 = getWindowedCarouselItems(res.bottomRow, 0);
@@ -81,19 +81,19 @@ describe('lobbyPoseLogic', () => {
     assert.equal(bottomWindow0.length, MAX_LOBBY_CARDS_PER_ROW);
     assert.ok(topWindow0.length + bottomWindow0.length <= MAX_LOBBY_VISIBLE_CARDS);
 
-    // Every tick shifts cleanly across the 100-player ring without duplicates
+    // Every tick shifts cleanly across the 50-player ring without duplicates
     const seenTopIds = new Set<string>();
     for (let tick = 0; tick < res.topRow.length; tick += 1) {
       const win = getWindowedCarouselItems(res.topRow, -tick);
       assert.equal(win.length, MAX_LOBBY_CARDS_PER_ROW);
       seenTopIds.add(win[0].id);
     }
-    assert.equal(seenTopIds.size, 100);
+    assert.equal(seenTopIds.size, 50);
 
     // Wrap-around boundary check for leftward ticks
-    const leftWin = getWindowedCarouselItems(res.bottomRow, 98);
-    assert.equal(leftWin[0].id, res.bottomRow[98].id);
-    assert.equal(leftWin[1].id, res.bottomRow[99].id);
+    const leftWin = getWindowedCarouselItems(res.bottomRow, 48);
+    assert.equal(leftWin[0].id, res.bottomRow[48].id);
+    assert.equal(leftWin[1].id, res.bottomRow[49].id);
     assert.equal(leftWin[2].id, res.bottomRow[0].id);
   });
 });

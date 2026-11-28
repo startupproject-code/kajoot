@@ -145,7 +145,7 @@
         },
         "leaderboard": {
           "type": "array",
-          "description": "Ranked player public summaries (max 200 entries, zero PII)."
+          "description": "Ranked player public summaries (max 100 entries, zero PII)."
         },
         "createdAt": {
           "type": "string",
@@ -205,7 +205,7 @@
     },
     "RoomPlayer": {
       "title": "RoomPlayer",
-      "description": "Player participant document inside a quiz room (up to 200 players).",
+      "description": "Player participant document inside a quiz room (up to 100 players).",
       "type": "object",
       "properties": {
         "id": {
@@ -364,7 +364,7 @@
     },
     "/rooms/{roomCode}/players/{playerId}": {
       "schema": { "$ref": "#/entities/RoomPlayer" },
-      "description": "Players participating in a room (up to 200 players)."
+      "description": "Players participating in a room (up to 100 players)."
     },
     "/rooms/{roomCode}/answers/{answerId}": {
       "schema": { "$ref": "#/entities/RoomAnswer" },

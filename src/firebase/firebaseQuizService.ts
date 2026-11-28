@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   query,
@@ -14,7 +15,13 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses';
-import { calculatePoints, generateRoomCode, isValidRoomCode, rankPlayers } from '../shared/quizLogic';
+import {
+  assignCorrectAnswerOrder,
+  calculatePoints,
+  generateRoomCode,
+  isValidRoomCode,
+  rankPlayers,
+} from '../shared/quizLogic';
 import {
   buildPublicQuestionPayload,
   isValidFirebaseId,
@@ -23,6 +30,7 @@ import {
   sanitizeQuizForFirebase,
 } from '../shared/firebaseValidation';
 import { computeRemainingQuestionStats } from '../utils/playerPresenceLogic';
+import { computeRemainingSeconds, ServerClockTracker } from '../utils/questionTimerSync';
 import {
   AnswerIndex,
   AvatarId,
@@ -36,6 +44,12 @@ import {
 import { db, firebaseRuntimeConfig, handleFirestoreError, OperationType } from './firebaseClient';
 
 const GUEST_PLAYER_STORAGE_KEY = 'quizarena_guest_player_id';
+
+const serverClock = new ServerClockTracker();
+
+export function getSyncedServerNowMs(): number {
+  return serverClock.getEstimatedServerNowMs();
+}
 
 export function getOrCreateGuestPlayerId(): string {
   try {
@@ -116,17 +130,15 @@ export interface FirestoreAnswerDoc {
 
 export function roomDocToPublicState(
   room: FirestoreRoomDoc,
-  now = Date.now(),
+  now = getSyncedServerNowMs(),
   overridePlayers?: PlayerPublic[]
 ): RoomPublicState {
   const remainingSec =
     room.phase === 'QUESTION' && room.questionEndsAt
-      ? Math.max(
-          0,
-          Math.min(
-            room.currentQuestion?.timeLimitSec ?? 180,
-            Math.ceil((room.questionEndsAt - now) / 1000)
-          )
+      ? computeRemainingSeconds(
+          room.questionEndsAt,
+          now,
+          room.currentQuestion?.timeLimitSec ?? 180
         )
       : 0;
 
@@ -314,6 +326,7 @@ export async function createFirebaseRoom(
   const hostDataPath = `rooms/${chosenCode}/hostData/quiz`;
 
   try {
+    serverClock.beginWrite('room');
     await setDoc(doc(db, 'rooms', chosenCode), {
       code: chosenCode,
       hostUid,
@@ -332,6 +345,21 @@ export async function createFirebaseRoom(
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    serverClock.finishWrite('room');
+    if (!serverClock.hasCalibrated()) {
+      try {
+        const committedRoom = await getDocFromServer(doc(db, 'rooms', chosenCode));
+        if (committedRoom.exists()) {
+          const createdTs = (committedRoom.data() as FirestoreRoomDoc).createdAt;
+          serverClock.recordConfirmedTimestamp('room', createdTs?.toMillis() ?? null, {
+            fromCache: false,
+            hasPendingWrites: false,
+          });
+        }
+      } catch {
+        // Non-fatal: subscribeHostRoom will calibrate on first server snapshot
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, roomPath);
   }
@@ -368,7 +396,16 @@ export function subscribeHostRoom(
     doc(db, 'rooms', code),
     (snap) => {
       if (snap.exists()) {
-        callbacks.onRoom(snap.data() as FirestoreRoomDoc);
+        const data = snap.data() as FirestoreRoomDoc;
+        serverClock.recordConfirmedTimestamp(
+          'room',
+          data.updatedAt?.toMillis() ?? null,
+          {
+            fromCache: snap.metadata.fromCache,
+            hasPendingWrites: snap.metadata.hasPendingWrites,
+          }
+        );
+        callbacks.onRoom(data);
       }
     },
     (error) => {
@@ -414,6 +451,7 @@ export async function syncHostRoomStats(params: {
   const roomPath = `rooms/${params.code}`;
   const ranked = rankPlayers(params.players);
   try {
+    serverClock.beginWrite('room');
     await updateDoc(doc(db, 'rooms', params.code), {
       answeredCount: params.answeredCount,
       totalPlayers: Math.min(MAX_PLAYERS_PER_ROOM, ranked.length),
@@ -421,6 +459,7 @@ export async function syncHostRoomStats(params: {
       leaderboard: ranked.slice(0, MAX_PLAYERS_PER_ROOM),
       updatedAt: serverTimestamp(),
     });
+    serverClock.finishWrite('room');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, roomPath);
   }
@@ -436,7 +475,7 @@ export async function hostStartOrAdvanceQuestion(params: {
   const q = quiz.questions[questionIndex];
   if (!q) return;
 
-  const now = Date.now();
+  const now = Math.round(getSyncedServerNowMs());
   const questionEndsAt = now + q.timeLimitSec * 1000;
   const publicQuestion = buildPublicQuestionPayload(q, 'QUESTION');
 
@@ -479,7 +518,9 @@ export async function hostStartOrAdvanceQuestion(params: {
   });
 
   try {
+    serverClock.beginWrite('room');
     await batch.commit();
+    serverClock.finishWrite('room');
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `rooms/${code}`);
   }
@@ -500,7 +541,7 @@ export async function hostRevealCurrentQuestion(params: {
   if (!q) return;
 
   const totalMs = q.timeLimitSec * 1000;
-  const endsAt = questionEndsAt ?? Date.now();
+  const endsAt = questionEndsAt ?? Math.round(getSyncedServerNowMs());
 
   const activePlayerIds = new Set(players.map((p) => p.id));
   const answerMap = new Map<string, FirestoreAnswerDoc>();
@@ -513,6 +554,15 @@ export async function hostRevealCurrentQuestion(params: {
       answerCounts[ans.choice] += 1;
     }
   }
+
+  const correctOrderMap = assignCorrectAnswerOrder(
+    Array.from(answerMap.values())
+      .filter((ans) => ans.choice === q.correctIndex)
+      .map((ans) => ({
+        playerId: ans.playerUid,
+        answeredAtMs: ans.submittedAt ? ans.submittedAt.toMillis() : Number.MAX_SAFE_INTEGER,
+      }))
+  );
 
   const updatedPlayers = players.map((p) => {
     const sub = answerMap.get(p.id);
@@ -527,7 +577,7 @@ export async function hostRevealCurrentQuestion(params: {
     }
 
     const isCorrect = sub.choice === q.correctIndex;
-    const submittedMs = sub.submittedAt ? sub.submittedAt.toMillis() : Date.now();
+    const submittedMs = sub.submittedAt ? sub.submittedAt.toMillis() : Math.round(getSyncedServerNowMs());
     const remainingMs = Math.max(0, endsAt - submittedMs);
 
     if (isCorrect) {
@@ -537,6 +587,7 @@ export async function hostRevealCurrentQuestion(params: {
         remainingMs,
         totalMs,
         streak: nextStreak,
+        correctOrderIndex: correctOrderMap.get(p.id) ?? 0,
       });
       return {
         ...p,
@@ -793,6 +844,7 @@ export async function joinFirebaseRoom(params: {
 
   try {
     const existingSnap = await getDoc(playerRef);
+    serverClock.beginWrite('player');
     if (existingSnap.exists()) {
       await updateDoc(playerRef, {
         name: cleanName,
@@ -824,6 +876,21 @@ export async function joinFirebaseRoom(params: {
         updatedAt: serverTimestamp(),
       });
     }
+    serverClock.finishWrite('player');
+    if (!serverClock.hasCalibrated()) {
+      try {
+        const committedPlayer = await getDocFromServer(playerRef);
+        if (committedPlayer.exists()) {
+          const updatedTs = (committedPlayer.data() as FirestorePlayerDoc).updatedAt;
+          serverClock.recordConfirmedTimestamp('player', updatedTs?.toMillis() ?? null, {
+            fromCache: false,
+            hasPendingWrites: false,
+          });
+        }
+      } catch {
+        // Non-fatal: subscribePlayerRoom & heartbeats will calibrate on confirmation
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, playerPath);
   }
@@ -840,10 +907,12 @@ export async function updateFirebasePlayerPose(params: {
     : DEFAULT_POSE_ID;
   const playerPath = `rooms/${params.code}/players/${params.uid}`;
   try {
+    serverClock.beginWrite('player');
     await updateDoc(doc(db, 'rooms', params.code, 'players', params.uid), {
       poseId: safePoseId,
       updatedAt: serverTimestamp(),
     });
+    serverClock.finishWrite('player');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, playerPath);
   }
@@ -855,10 +924,12 @@ export async function sendPlayerHeartbeat(params: {
 }): Promise<void> {
   if (!isValidRoomCode(params.code) || !isValidFirebaseId(params.uid)) return;
   try {
+    serverClock.beginWrite('player');
     await updateDoc(doc(db, 'rooms', params.code, 'players', params.uid), {
       connected: true,
       updatedAt: serverTimestamp(),
     });
+    serverClock.finishWrite('player');
   } catch (error) {
     const code = (error as { code?: string })?.code;
     if (code === 'not-found' || code === 'permission-denied') {
@@ -990,7 +1061,20 @@ export function subscribePlayerRoom(
   const unsubPlayer = onSnapshot(
     doc(db, 'rooms', code, 'players', playerUid),
     (snap) => {
-      callbacks.onPlayerSelf(snap.exists() ? (snap.data() as FirestorePlayerDoc) : null);
+      if (snap.exists()) {
+        const playerData = snap.data() as FirestorePlayerDoc;
+        serverClock.recordConfirmedTimestamp(
+          'player',
+          playerData.updatedAt?.toMillis() ?? null,
+          {
+            fromCache: snap.metadata.fromCache,
+            hasPendingWrites: snap.metadata.hasPendingWrites,
+          }
+        );
+        callbacks.onPlayerSelf(playerData);
+      } else {
+        callbacks.onPlayerSelf(null);
+      }
     },
     (error) => {
       handleFirestoreError(error, OperationType.GET, playerPath);

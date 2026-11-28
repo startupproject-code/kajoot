@@ -27,11 +27,15 @@ export function isValidAvatarId(avatarId: string): avatarId is AvatarId {
   return AVATARS.some((a) => a.id === avatarId);
 }
 
+export const MIN_CORRECT_ANSWER_POINTS = 50;
+export const CORRECT_ORDER_PENALTY_STEP = 50;
+
 export function calculatePoints(params: {
   isCorrect: boolean;
   remainingMs: number;
   totalMs: number;
   streak: number;
+  correctOrderIndex?: number;
 }): number {
   if (!params.isCorrect) {
     return 0;
@@ -42,7 +46,26 @@ export function calculatePoints(params: {
   const basePoints = 500;
   const speedBonus = Math.round(500 * ratio);
   const streakBonus = Math.min(250, Math.max(0, params.streak - 1) * 50);
-  return basePoints + speedBonus + streakBonus;
+  const rawPoints = basePoints + speedBonus + streakBonus;
+  const orderIndex = Math.max(0, Math.floor(params.correctOrderIndex ?? 0));
+  const orderPenalty = orderIndex * CORRECT_ORDER_PENALTY_STEP;
+  return Math.max(MIN_CORRECT_ANSWER_POINTS, rawPoints - orderPenalty);
+}
+
+export function assignCorrectAnswerOrder(
+  correctEntries: Array<{ playerId: string; answeredAtMs: number }>
+): Map<string, number> {
+  const sorted = [...correctEntries].sort((a, b) => {
+    if (a.answeredAtMs !== b.answeredAtMs) {
+      return a.answeredAtMs - b.answeredAtMs;
+    }
+    return a.playerId.localeCompare(b.playerId);
+  });
+  const orderMap = new Map<string, number>();
+  sorted.forEach((entry, idx) => {
+    orderMap.set(entry.playerId, idx);
+  });
+  return orderMap;
 }
 
 export function rankPlayers<
@@ -208,7 +231,8 @@ export function parseQuizCsv(csvText: string): {
 }
 
 function escapeCsvCell(value: string | number | undefined): string {
-  const str = value === undefined ? '' : String(value);
+  const raw = value === undefined ? '' : String(value);
+  const str = /^\s*[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -276,17 +300,56 @@ export function exportResultsToCsv(
   return '\uFEFF' + lines.join('\n');
 }
 
+const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i;
+const SAFE_VIDEO_DATA_URL_RE = /^data:video\/(mp4|webm|ogg|quicktime);base64,[A-Za-z0-9+/=]+$/i;
+const SAFE_YOUTUBE_ID_RE = /^[a-zA-Z0-9_-]{6,20}$/;
+
+export function sanitizeSafeMediaUrl(
+  url: string | undefined,
+  kind: 'image' | 'video' = 'image'
+): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return trimmed;
+  }
+
+  if (kind === 'image' && SAFE_IMAGE_DATA_URL_RE.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (kind === 'video' && SAFE_VIDEO_DATA_URL_RE.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return trimmed;
+    }
+    if (parsed.protocol === 'blob:') {
+      return trimmed;
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
 export function parseVideoEmbed(url?: string): {
   type: 'youtube' | 'video' | 'none';
   src: string;
 } {
-  if (!url || !url.trim()) {
+  const safeSrc = sanitizeSafeMediaUrl(url, 'video');
+  if (!safeSrc) {
     return { type: 'none', src: '' };
   }
-  const trimmed = url.trim();
 
   try {
-    const parsed = new URL(trimmed, 'http://localhost');
+    const parsed = new URL(safeSrc, 'http://localhost');
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
 
     if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
@@ -297,7 +360,7 @@ export function parseVideoEmbed(url?: string): {
       if (!videoId && parsed.pathname.startsWith('/embed/')) {
         videoId = parsed.pathname.split('/')[2] ?? null;
       }
-      if (videoId) {
+      if (videoId && SAFE_YOUTUBE_ID_RE.test(videoId)) {
         return {
           type: 'youtube',
           src: `https://www.youtube.com/embed/${videoId}?rel=0`,
@@ -307,7 +370,7 @@ export function parseVideoEmbed(url?: string): {
 
     if (host === 'youtu.be') {
       const videoId = parsed.pathname.slice(1).split('/')[0];
-      if (videoId) {
+      if (videoId && SAFE_YOUTUBE_ID_RE.test(videoId)) {
         return {
           type: 'youtube',
           src: `https://www.youtube.com/embed/${videoId}?rel=0`,
@@ -318,5 +381,5 @@ export function parseVideoEmbed(url?: string): {
     return { type: 'none', src: '' };
   }
 
-  return { type: 'video', src: trimmed };
+  return { type: 'video', src: safeSrc };
 }

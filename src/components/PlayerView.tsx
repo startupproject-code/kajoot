@@ -17,6 +17,7 @@ import {
   FirestorePlayerDoc,
   FirestoreRoomDoc,
   getOrCreateGuestPlayerId,
+  getSyncedServerNowMs,
   joinFirebaseRoom,
   markPlayerDisconnected,
   roomDocToPublicState,
@@ -42,6 +43,7 @@ import {
   PLAYER_HEARTBEAT_INTERVAL_MS,
   PLAYER_HEARTBEAT_JITTER_MS,
 } from '../utils/playerPresenceLogic';
+import { computeNextCountdownTickDelayMs } from '../utils/questionTimerSync';
 import { soundFx } from '../utils/soundFx';
 import { ANSWER_STYLES, AnswerShapeIcon } from './AnswerBadge';
 import { AvatarPicker } from './AvatarPicker';
@@ -77,7 +79,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
   const [roomDoc, setRoomDoc] = useState<FirestoreRoomDoc | null>(null);
   const [selfPlayerDoc, setSelfPlayerDoc] = useState<FirestorePlayerDoc | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => getSyncedServerNowMs());
   const [selectedChoice, setSelectedChoice] = useState<AnswerIndex | null>(null);
   const [joiningRoom, setJoiningRoom] = useState(false);
 
@@ -276,15 +278,34 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     };
   }, [isActiveRoomSession, roomCode, guestPlayerId]);
 
-  // Smooth 250ms countdown clock during QUESTION phase
+  // Server-synced boundary-aligned countdown clock during QUESTION phase
   useEffect(() => {
-    if (!roomDoc || roomDoc.phase !== 'QUESTION') return;
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [roomDoc?.phase, roomDoc?.currentQuestionIndex, roomDoc?.questionEndsAt]);
+    if (!roomDoc || roomDoc.phase !== 'QUESTION' || !roomDoc.questionEndsAt) return;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    const endsAt = roomDoc.questionEndsAt;
+    const timeLimitSec = roomDoc.currentQuestion?.timeLimitSec ?? 180;
+
+    const scheduleNextTick = () => {
+      if (cancelled) return;
+      const syncedNow = getSyncedServerNowMs();
+      setNowMs(syncedNow);
+      const delayMs = computeNextCountdownTickDelayMs(endsAt, syncedNow, timeLimitSec);
+      if (delayMs === null) return;
+      timeoutId = window.setTimeout(scheduleNextTick, delayMs);
+    };
+
+    scheduleNextTick();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [
+    roomDoc?.phase,
+    roomDoc?.currentQuestionIndex,
+    roomDoc?.questionEndsAt,
+    roomDoc?.currentQuestion?.timeLimitSec,
+  ]);
 
   // 3s pose change cooldown ticker to prevent spamming Firestore writes
   const isPoseCooldownActive = poseCooldownRemainingMs > 0;

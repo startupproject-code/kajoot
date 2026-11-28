@@ -1,5 +1,7 @@
+import crypto from 'crypto';
 import { DEFAULT_POSE_ID, isValidPoseForAvatar } from '../shared/characterPoses';
 import {
+  assignCorrectAnswerOrder,
   calculatePoints,
   generateRoomCode,
   isValidAvatarId,
@@ -66,7 +68,7 @@ export class RoomManager {
 
     const existing = new Set(this.rooms.keys());
     const code = generateRoomCode(existing);
-    const hostToken = `host-${Math.random().toString(36).slice(2)}-${now.toString(36)}`;
+    const hostToken = `host-${crypto.randomBytes(16).toString('hex')}`;
 
     const sanitizedQuiz: QuizSet = {
       id: quiz.id || `quiz-${now}`,
@@ -188,7 +190,7 @@ export class RoomManager {
       throw new Error(`ห้องเต็มแล้ว (รองรับผู้เล่นสูงสุด ${MAX_PLAYERS_PER_ROOM} คนต่อห้อง)`);
     }
 
-    const playerId = `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+    const playerId = `p-${crypto.randomBytes(12).toString('hex')}`;
     const player: InternalPlayer = {
       id: playerId,
       name: cleanName,
@@ -348,6 +350,12 @@ export class RoomManager {
     const totalMs = q.timeLimitSec * 1000;
     const endsAt = room.questionEndsAt ?? Date.now();
 
+    const correctOrderMap = assignCorrectAnswerOrder(
+      Array.from(room.answersThisQuestion.entries())
+        .filter(([, sub]) => sub.choice === q.correctIndex)
+        .map(([playerId, sub]) => ({ playerId, answeredAtMs: sub.answeredAt }))
+    );
+
     for (const player of room.players.values()) {
       const submission = room.answersThisQuestion.get(player.id);
       if (!submission) {
@@ -369,6 +377,7 @@ export class RoomManager {
           remainingMs,
           totalMs,
           streak: player.streak,
+          correctOrderIndex: correctOrderMap.get(player.id) ?? 0,
         });
         player.score += pts;
         player.lastPoints = pts;

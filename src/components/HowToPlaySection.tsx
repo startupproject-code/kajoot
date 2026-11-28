@@ -52,10 +52,10 @@ const GUIDE_STEPS: GuideStep[] = [
     num: '03',
     title: 'ถูก + ไว + ต่อเนื่อง = แชมป์!',
     summary:
-      'ทุกข้อที่ตอบถูกได้แต้มฐานพร้อมโบนัสความไว และถ้าตอบถูกติดกันหลายข้อก็ยิ่งได้โบนัสทวีคูณ',
+      'คนแรกที่ตอบถูกจะได้คะแนนเต็มตามเกณฑ์ (ฐาน + ความไว + สตรีค) ส่วนคนที่ตอบถูกถัดๆ ไปคะแนนจะลดหลั่นลงมาทีละ 50 แต้ม',
     tips: [
-      'ตอบถูก 500 + โบนัสไวสูงสุด 500 + สตรีคสูงสุด 250 = เต็ม 1,250 แต้ม/ข้อ',
-      'จบเกมใครคะแนนรวมสูงสุด Top 3 ได้ขึ้นแท่นแชมป์โชว์ทุกหน้าจอ!',
+      'คนแรกที่ตอบถูก: ฐาน 500 + ไวสูงสุด 500 + สตรีคสูงสุด 250 = เต็ม 1,250 แต้ม/ข้อ',
+      'คนที่ตอบถูกถัดๆ ไปลดลงทีละ 50 แต้มตามลำดับ (ขั้นต่ำข้อละ 50 แต้ม) และ Top 3 ได้ขึ้นแท่นแชมป์!',
     ],
     image: winnerImg,
     imageAlt: 'ถ้วยรางวัลผู้ชนะบนแท่นรับรางวัลพร้อมสายฟ้าความไวและไฟคอมโบสตรีค',
@@ -158,13 +158,13 @@ export const HowToPlaySection: React.FC<HowToPlaySectionProps> = ({ onJoinPlayer
           </span>
         </div>
 
-        <dl className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <dl className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
           <div className="space-y-1">
             <dt className="text-xs font-semibold text-slate-500">ตอบถูกพื้นฐาน</dt>
             <dd className="text-xl sm:text-2xl font-extrabold text-slate-900 tabular-nums">
               500 แต้ม
             </dd>
-            <p className="text-xs text-slate-600">ตอบถูกปุ๊บ รับไปเลยขั้นต่ำข้อละ 500</p>
+            <p className="text-xs text-slate-600">คะแนนตั้งต้นเมื่อตอบถูกในข้อนั้น</p>
           </div>
 
           <div className="space-y-1">
@@ -184,6 +184,16 @@ export const HowToPlaySection: React.FC<HowToPlaySectionProps> = ({ onJoinPlayer
           </div>
 
           <div className="space-y-1">
+            <dt className="text-xs font-semibold text-slate-500">ลำดับคนตอบถูก</dt>
+            <dd className="text-xl sm:text-2xl font-extrabold text-rose-600 tabular-nums">
+              -50 แต้ม/ลำดับ
+            </dd>
+            <p className="text-xs text-slate-600">
+              คนแรกได้เต็ม คนตอบถูกถัดๆ ไปลดทีละ 50 (ขั้นต่ำ 50 แต้ม)
+            </p>
+          </div>
+
+          <div className="space-y-1 col-span-2 md:col-span-1">
             <dt className="text-xs font-semibold text-slate-500">เงื่อนไขผู้ชนะ</dt>
             <dd className="text-xl sm:text-2xl font-extrabold text-emerald-600 tabular-nums">
               แต้มรวมสูงสุด

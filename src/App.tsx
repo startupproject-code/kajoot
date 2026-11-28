@@ -130,7 +130,7 @@ function AppContent() {
         <section id="roles" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-6 space-y-5">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-[1.2] text-balance">
-              เกมตอบคำถามความรู้ทั่วไป แข่งขันเรียลไทม์ สูงสุด 200 คน
+              เกมตอบคำถามความรู้ทั่วไป แข่งขันเรียลไทม์ สูงสุด {MAX_PLAYERS_PER_ROOM} คน
             </h1>
             <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
               สร้างชุดคำถามผ่านหน้าเว็บหรืออัปโหลดไฟล์ CSV ใส่รูปภาพและวิดีโอประกอบได้เต็มที่ พร้อมจับเวลาถอยหลังสุดตื่นเต้นและตารางจัดอันดับถ่ายทอดสดบนหน้าจอผู้เล่นทุกคน

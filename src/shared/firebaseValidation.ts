@@ -1,5 +1,5 @@
 import { isValidPoseForAvatar } from './characterPoses';
-import { isValidAvatarId, isValidRoomCode } from './quizLogic';
+import { isValidAvatarId, isValidRoomCode, sanitizeSafeMediaUrl } from './quizLogic';
 import { AnswerIndex, AvatarId, MAX_PLAYERS_PER_ROOM, PublicQuestionView, QuizSet, RoomPhase } from './types';
 
 // Constants synchronized verbatim with firebase-blueprint.json & firestore.rules
@@ -29,9 +29,9 @@ export function sanitizeQuizForFirebase(quiz: QuizSet): QuizSet {
     .slice(0, MAX_QUESTIONS_PER_QUIZ)
     .map((q, idx) => {
       const cleanId = isValidFirebaseId(q.id) ? q.id : `q_${idx + 1}`;
-      const rawImg = q.imageUrl?.trim();
+      const rawImg = sanitizeSafeMediaUrl(q.imageUrl, 'image');
       const imageUrl = rawImg && rawImg.length <= MAX_IMAGE_DATA_URL_LEN ? rawImg : rawImg?.slice(0, MAX_IMAGE_DATA_URL_LEN);
-      const videoUrl = q.videoUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
+      const videoUrl = sanitizeSafeMediaUrl(q.videoUrl, 'video').slice(0, MAX_MEDIA_URL_LEN);
 
       return {
         id: cleanId,
@@ -49,7 +49,7 @@ export function sanitizeQuizForFirebase(quiz: QuizSet): QuizSet {
       };
     });
 
-  const rawCover = quiz.coverImageUrl?.trim();
+  const rawCover = sanitizeSafeMediaUrl(quiz.coverImageUrl, 'image');
   const coverImageUrl =
     rawCover && rawCover.length <= MAX_IMAGE_DATA_URL_LEN
       ? rawCover
@@ -68,9 +68,9 @@ export function buildPublicQuestionPayload(
   q: QuizSet['questions'][number],
   phase: RoomPhase
 ): PublicQuestionView {
-  const rawImg = q.imageUrl?.trim();
+  const rawImg = sanitizeSafeMediaUrl(q.imageUrl, 'image');
   const imageUrl = rawImg && rawImg.length <= MAX_IMAGE_DATA_URL_LEN ? rawImg : rawImg?.slice(0, MAX_IMAGE_DATA_URL_LEN);
-  const videoUrl = q.videoUrl?.trim().slice(0, MAX_MEDIA_URL_LEN);
+  const videoUrl = sanitizeSafeMediaUrl(q.videoUrl, 'video').slice(0, MAX_MEDIA_URL_LEN);
 
   return {
     id: isValidFirebaseId(q.id) ? q.id : `q_${Date.now().toString(36)}`,

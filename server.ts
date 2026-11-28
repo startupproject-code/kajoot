@@ -2,9 +2,29 @@ import express, { Response } from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { RoomManager } from './src/server/roomManager';
 import { ClientMessage, ServerMessage } from './src/shared/types';
+
+const ALLOWED_MEDIA_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'video/quicktime',
+]);
+
+function isValidHostToken(expected: string, provided: string | null | undefined): boolean {
+  if (!expected || typeof provided !== 'string' || !provided) return false;
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(provided, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 
 const portArgIdx = process.argv.indexOf('--port');
 const cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : NaN;
@@ -40,10 +60,9 @@ app.post('/api/media', (req, res) => {
     return;
   }
 
-  const mimeType = match[1];
-  const allowedPrefix = mimeType.startsWith('image/') || mimeType.startsWith('video/');
-  if (!allowedPrefix) {
-    res.status(400).json({ error: 'รองรับเฉพาะไฟล์รูปภาพหรือวิดีโอเท่านั้น' });
+  const mimeType = match[1].toLowerCase();
+  if (!ALLOWED_MEDIA_MIME_TYPES.has(mimeType)) {
+    res.status(400).json({ error: 'รองรับเฉพาะไฟล์รูปภาพ (PNG/JPG/WebP/GIF) หรือวิดีโอ (MP4/WebM/OGG) เท่านั้น' });
     return;
   }
 
@@ -58,18 +77,23 @@ app.post('/api/media', (req, res) => {
     if (oldestKey) mediaStore.delete(oldestKey);
   }
 
-  const id = `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const id = `m-${crypto.randomBytes(8).toString('hex')}`;
   mediaStore.set(id, { mimeType, buffer, createdAt: Date.now() });
   res.json({ url: `/api/media/${id}` });
 });
 
 app.get('/api/media/:id', (req, res) => {
+  if (!/^m-[a-zA-Z0-9_-]{4,64}$/.test(req.params.id)) {
+    res.status(400).send('Invalid media id');
+    return;
+  }
   const item = mediaStore.get(req.params.id);
   if (!item) {
     res.status(404).send('Not found');
     return;
   }
   res.setHeader('Content-Type', item.mimeType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.send(item.buffer);
 });
@@ -294,7 +318,7 @@ function processClientMessage(
 
     case 'host:reconnect': {
       const room = roomManager.getRoom(msg.code);
-      if (!room || room.hostToken !== msg.hostToken) {
+      if (!room || !isValidHostToken(room.hostToken, msg.hostToken)) {
         return { type: 'error', message: 'ไม่พบห้องหรือสิทธิ์โฮสต์หมดอายุ' };
       }
       if (ws && ctx.roomCode) {
@@ -315,7 +339,7 @@ function processClientMessage(
         return { type: 'error', message: 'ไม่พบสิทธิ์โฮสต์ของห้องนี้' };
       }
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) {
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) {
         return { type: 'error', message: 'สิทธิ์โฮสต์ไม่ถูกต้อง' };
       }
       roomManager.startGame(ctx.roomCode);
@@ -327,7 +351,7 @@ function processClientMessage(
     case 'host:reveal': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.revealQuestion(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -337,7 +361,7 @@ function processClientMessage(
     case 'host:leaderboard': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.showLeaderboard(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -347,7 +371,7 @@ function processClientMessage(
     case 'host:next': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       const nextRoom = roomManager.nextQuestion(ctx.roomCode);
       if (nextRoom.phase === 'QUESTION') {
@@ -360,7 +384,7 @@ function processClientMessage(
     case 'host:end': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.endGame(ctx.roomCode);
       broadcastRoomState(ctx.roomCode);
@@ -370,7 +394,7 @@ function processClientMessage(
     case 'host:restart': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       stopQuestionTimer(ctx.roomCode);
       roomManager.restartRoom(ctx.roomCode, msg.quiz);
       broadcastRoomState(ctx.roomCode);
@@ -380,7 +404,7 @@ function processClientMessage(
     case 'host:kick': {
       if (ctx.role !== 'host' || !ctx.roomCode) return null;
       const room = roomManager.getRoom(ctx.roomCode);
-      if (!room || (ctx.hostToken && room.hostToken !== ctx.hostToken)) return null;
+      if (!room || !isValidHostToken(room.hostToken, ctx.hostToken)) return null;
       if (roomManager.kickPlayer(ctx.roomCode, msg.playerId)) {
         broadcastRoomState(ctx.roomCode);
       }
@@ -463,7 +487,7 @@ app.get('/api/events', (req, res) => {
     return;
   }
 
-  if (role === 'host' && room.hostToken !== hostToken) {
+  if (role === 'host' && !isValidHostToken(room.hostToken, hostToken)) {
     res.status(403).json({ error: 'สิทธิ์โฮสต์ไม่ถูกต้อง' });
     return;
   }

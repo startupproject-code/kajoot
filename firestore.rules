@@ -57,7 +57,20 @@ service cloud.firestore {
     }
 
     function isValidPoseId(poseId) {
-      return poseId is string && poseId.size() >= 1 && poseId.size() <= 32 && poseId.matches('^[a-zA-Z0-9_\\-]+$');
+      return poseId is string && poseId.size() >= 1 && poseId.size() <= 32 && poseId in [
+        'default', 'pose_1', 'pose_2', 'pose_3', 'pose_4', 'pose_5', 'pose_6'
+      ];
+    }
+
+    function isSafeMediaUrl(url, allowEmpty) {
+      return url is string && (
+        (allowEmpty && url == '') ||
+        url.matches('^https?://.*') ||
+        url.matches('^/.*') ||
+        url.matches('^blob:.*') ||
+        url.matches('^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$') ||
+        url.matches('^data:video/(mp4|webm|ogg|quicktime);base64,[A-Za-z0-9+/=]+$')
+      );
     }
 
     // =========================================================================
@@ -81,7 +94,7 @@ service cloud.firestore {
         && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 && data.ownerUid == userId && data.ownerUid == request.auth.uid
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
         && data.description is string && data.description.size() <= 300
-        && (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 700000))
+        && (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 700000 && isSafeMediaUrl(data.coverImageUrl, true)))
         && data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 100
         && data.questions[0] is map
         && data.createdAt is timestamp
@@ -100,8 +113,8 @@ service cloud.firestore {
         && q.options[2] is string && q.options[2].size() >= 1 && q.options[2].size() <= 200
         && q.options[3] is string && q.options[3].size() >= 1 && q.options[3].size() <= 200
         && q.timeLimitSec is number && q.timeLimitSec >= 5 && q.timeLimitSec <= 180
-        && (!('imageUrl' in q) || (q.imageUrl is string && q.imageUrl.size() <= 700000))
-        && (!('videoUrl' in q) || (q.videoUrl is string && q.videoUrl.size() <= 2048))
+        && (!('imageUrl' in q) || (q.imageUrl is string && q.imageUrl.size() <= 700000 && isSafeMediaUrl(q.imageUrl, false)))
+        && (!('videoUrl' in q) || (q.videoUrl is string && q.videoUrl.size() <= 2048 && isSafeMediaUrl(q.videoUrl, false)))
         && (phase != 'QUESTION' ? (!('correctIndex' in q) || (q.correctIndex is int && q.correctIndex >= 0 && q.correctIndex <= 3)) : !('correctIndex' in q));
     }
 
@@ -124,18 +137,27 @@ service cloud.firestore {
         && isValidPhase(data.phase)
         && data.currentQuestionIndex is int && data.currentQuestionIndex >= -1 && data.currentQuestionIndex <= 100
         && data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 100
+        && data.currentQuestionIndex < data.totalQuestions
         && (data.currentQuestion == null || isValidPublicQuestion(data.currentQuestion, data.phase))
         && (data.questionStartedAt == null || data.questionStartedAt is number)
         && (data.questionEndsAt == null || data.questionEndsAt is number)
-        && data.answeredCount is int && data.answeredCount >= 0 && data.answeredCount <= 200
-        && data.totalPlayers is int && data.totalPlayers >= 0 && data.totalPlayers <= 200
-        && data.maxPlayers is int && data.maxPlayers == 200
+        && (data.phase != 'LOBBY' || (data.currentQuestionIndex == -1 && data.currentQuestion == null))
+        && (data.phase != 'QUESTION' || (
+          data.currentQuestionIndex >= 0
+          && data.currentQuestion != null
+          && data.questionStartedAt is number
+          && data.questionEndsAt is number
+          && data.questionEndsAt > data.questionStartedAt
+        ))
+        && data.answeredCount is int && data.answeredCount >= 0 && data.answeredCount <= 100
+        && data.totalPlayers is int && data.totalPlayers >= 0 && data.totalPlayers <= 100
+        && data.maxPlayers is int && data.maxPlayers == 100
         && data.answerCounts is list && data.answerCounts.size() == 4
         && data.answerCounts[0] is int && data.answerCounts[0] >= 0
         && data.answerCounts[1] is int && data.answerCounts[1] >= 0
         && data.answerCounts[2] is int && data.answerCounts[2] >= 0
         && data.answerCounts[3] is int && data.answerCounts[3] >= 0
-        && data.leaderboard is list && data.leaderboard.size() <= 200
+        && data.leaderboard is list && data.leaderboard.size() <= 100
         && (data.leaderboard.size() == 0 || (
           data.leaderboard[0] is map
           && data.leaderboard[0].keys().hasAll(['id', 'name', 'avatarId', 'score', 'rank'])
@@ -185,7 +207,7 @@ service cloud.firestore {
         && data.lastPoints is int && data.lastPoints >= 0
         && (data.lastCorrect == null || data.lastCorrect is bool)
         && (data.lastChoice == null || (data.lastChoice is int && data.lastChoice >= 0 && data.lastChoice <= 3))
-        && data.rank is int && data.rank >= 1 && data.rank <= 200
+        && data.rank is int && data.rank >= 1 && data.rank <= 100
         && data.connected is bool
         && data.joinedAt is timestamp
         && data.updatedAt is timestamp;
@@ -322,7 +344,7 @@ service cloud.firestore {
           && existing().hostUid == request.auth.uid;
       }
 
-      // /rooms/{roomCode}/players/{playerId} — Guest QR Players (Up to 200, Zero PII)
+      // /rooms/{roomCode}/players/{playerId} — Guest QR Players (Up to 100, Zero PII)
       match /players/{playerId} {
         allow get: if isValidRoomCode(roomCode) && isValidId(playerId);
         allow list: if isVerifiedUser() && resource.data.hostUid == request.auth.uid;
@@ -339,10 +361,12 @@ service cloud.firestore {
           && incoming().lastCorrect == null
           && incoming().lastChoice == null
           && incoming().rank == 1
+          && incoming().connected == true
           && incoming().joinedAt == request.time
           && incoming().updatedAt == request.time
           && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase != 'ENDED'
-          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.totalPlayers < 200
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.phase != 'SHOWCASE'
+          && get(/databases/$(database)/documents/rooms/$(roomCode)).data.totalPlayers < 100
           && incoming().hostUid == get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid;
 
         allow update: if isValidRoomCode(roomCode)

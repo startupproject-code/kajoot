@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ImageOff, Video } from 'lucide-react';
-import { parseVideoEmbed } from '../shared/quizLogic';
+import { parseVideoEmbed, sanitizeSafeMediaUrl } from '../shared/quizLogic';
 
 interface MediaStageProps {
   imageUrl?: string;
@@ -24,9 +24,10 @@ export const MediaStage: React.FC<MediaStageProps> = ({
   useEffect(() => {
     setImgError(false);
   }, [imageUrl]);
+  const safeImageUrl = sanitizeSafeMediaUrl(imageUrl, 'image');
   const video = parseVideoEmbed(videoUrl);
 
-  const hasImage = Boolean(imageUrl && imageUrl.trim());
+  const hasImage = Boolean(safeImageUrl);
   const hasVideo = video.type !== 'none';
 
   if (!hasImage && !hasVideo) {
@@ -67,7 +68,7 @@ export const MediaStage: React.FC<MediaStageProps> = ({
         >
           {!imgError ? (
             <img
-              src={imageUrl}
+              src={safeImageUrl}
               alt="ภาพประกอบคำถาม"
               referrerPolicy="no-referrer"
               onError={() => setImgError(true)}

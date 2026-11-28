@@ -180,15 +180,20 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
     assert.match(rulesText, /match \/users\/\{userId\}[\s\S]*allow list: if false;/);
   });
 
-  it('11. Rejects invalid room code, oversized IDs, oversized names, and >200 players', () => {
+  it('11. Rejects invalid room code, oversized IDs, oversized names, and >100 players', () => {
+    const prodRules = fs.readFileSync('firestore.rules', 'utf8');
     assert.equal(isValidRoomCode('12345'), false);
     assert.equal(isValidFirebaseId('a'.repeat(129)), false);
     assert.equal(sanitizePlayerName('a'.repeat(50)).length, 24);
+    assert.match(rulesText, /data\.maxPlayers == 100/);
+    assert.match(rulesText, /data\.totalPlayers < 100/);
+    assert.match(prodRules, /data\.maxPlayers == 100/);
+    assert.match(prodRules, /data\.totalPlayers < 100/);
 
     const fullRoom = validateRoomPlayerPayload(
       {
-        id: 'p201',
-        uid: 'p201',
+        id: 'p101',
+        uid: 'p101',
         roomCode: '4829',
         hostUid: 'host-1',
         name: 'Late',
@@ -204,7 +209,7 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
         rank: 1,
         connected: true,
       },
-      { authUid: 'p201', roomCode: '4829', totalPlayersInRoom: 200, isCreate: true }
+      { authUid: 'p101', roomCode: '4829', totalPlayersInRoom: 100, isCreate: true }
     );
     assert.equal(fullRoom.ok, false);
   });
@@ -356,6 +361,11 @@ describe('Phase 0 Dirty Dozen Security Invariants & Rules Checks', () => {
 
     assert.match(rulesText, /isValidPoseId\(/);
     assert.match(prodRules, /isValidPoseId\(/);
+    assert.match(prodRules, /isSafeMediaUrl\(/);
+    assert.match(prodRules, /data\.phase != 'SHOWCASE'/);
+    assert.match(prodRules, /incoming\(\)\.connected == true/);
+    assert.match(prodRules, /data\.questionEndsAt > data\.questionStartedAt/);
+    assert.match(prodRules, /data\.currentQuestionIndex < data\.totalQuestions/);
     assert.match(prodRules, /hasOnly\(\['name', 'avatarId', 'poseId', 'connected', 'updatedAt'\]\)/);
     assert.match(prodRules, /match \/players\/\{playerId\}[\s\S]*allow delete: if isVerifiedUser\(\)[\s\S]*existing\(\)\.hostUid == request\.auth\.uid;/);
   });
